@@ -1,0 +1,178 @@
+import { markdownToHtmlBasic } from './markdownConversion';
+
+const generateFallbackId = (): string => {
+  const cryptoApi =
+    typeof globalThis !== 'undefined'
+      ? (globalThis.crypto as Crypto | undefined)
+      : undefined;
+  if (cryptoApi?.randomUUID) {
+    return cryptoApi.randomUUID().slice(0, 8);
+  }
+
+  return `${Date.now()}${Math.random().toString(36).slice(2)}`.slice(0, 8);
+};
+
+export const removeLinkTargetElement = (link: string): string => {
+  const { origin, pathname, search } = new URL(link);
+
+  return origin + pathname + search;
+};
+
+export const capitalize = (value: string): string =>
+  (value && value[0].toUpperCase() + value.slice(1)) || '';
+
+/**
+ * Formats a keyword/tag value to be human-readable by removing hyphens
+ * and capitalizing each word. For example: "machine-learning" -> "Machine Learning"
+ * @param value - The keyword/tag value to format
+ * @returns The formatted string
+ */
+export const formatKeyword = (value: string): string => {
+  if (!value) {
+    return '';
+  }
+  return value
+    .split('-')
+    .map((word) => capitalize(word))
+    .join(' ');
+};
+
+export const anchorDefaultRel = 'noopener noreferrer';
+
+export const checkLowercaseEquality = (
+  value1: string,
+  value2: string,
+): boolean => value1?.toLowerCase() === value2?.toLowerCase();
+
+/**
+ * Escapes special regex characters in a string to make it safe for use in RegExp constructor.
+ * This prevents regex injection attacks when user input is used in regex patterns.
+ * @param str - The string to escape
+ * @returns The escaped string safe for use in RegExp
+ */
+export const escapeRegexCharacters = (str: string): string => {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
+export const pluralize = (word: string, count: number, append = 's') =>
+  `${word}${count === 1 ? '' : append}`;
+
+export const concatStrings = (
+  strings: Array<string | null | undefined>,
+  separator = ', ',
+): string => {
+  return strings.filter(Boolean).join(separator);
+};
+
+/**
+ * Generates a display name from an email address.
+ * Extracts the local part (before @), replaces dots/underscores with spaces,
+ * and capitalizes each word.
+ *
+ * @example
+ * generateNameFromEmail('john.doe@gmail.com') // 'John Doe'
+ * generateNameFromEmail('x@test.com') // 'User abc123' (fallback for unusable)
+ */
+export const generateNameFromEmail = (
+  email: string,
+  entity = 'User',
+): string => {
+  const fallbackName = `${entity} ${generateFallbackId()}`;
+
+  if (!email || !email.includes('@')) {
+    return fallbackName;
+  }
+
+  const localPart = email.split('@')[0];
+
+  // Replace common separators with spaces
+  const withSpaces = localPart.replace(/[._-]/g, ' ');
+
+  // Remove any remaining non-alphanumeric characters except spaces
+  const cleaned = withSpaces.replace(/[^a-zA-Z0-9 ]/g, '').trim();
+
+  // If the cleaned result is too short or just numbers, use fallback
+  if (cleaned.length < 2 || /^\d+$/.test(cleaned)) {
+    return fallbackName;
+  }
+
+  // Capitalize each word
+  const capitalized = cleaned
+    .split(' ')
+    .filter((word) => word.length > 0)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+
+  return capitalized || fallbackName;
+};
+
+/**
+ * Strips HTML tags from a string, returning plain text
+ * Useful for extracting text content from HTML for SEO, search indexing, etc.
+ * @param html - The HTML string to strip
+ * @returns The plain text content without HTML tags
+ */
+export const stripHtmlTags = (html: string): string => {
+  return html?.replace(/<[^>]*>/g, '').trim() || '';
+};
+
+interface RichContentPlainTextOptions {
+  html?: string | null;
+  markdown?: string | null;
+}
+
+/**
+ * Converts rich text content into plain text for metadata and external consumers.
+ * Prefer rendered HTML when available, and fall back to converting markdown first
+ * so link labels are preserved without leaking markdown syntax or raw URLs.
+ */
+export const getPlainTextFromRichContent = ({
+  html,
+  markdown,
+}: RichContentPlainTextOptions): string => {
+  const htmlText = stripHtmlTags(html ?? '');
+  if (htmlText) {
+    return htmlText;
+  }
+
+  if (!markdown) {
+    return '';
+  }
+
+  return stripHtmlTags(markdownToHtmlBasic(markdown));
+};
+
+/**
+ * Escapes special markdown characters in user-generated content
+ * to prevent potential XSS when AI agents parse the markdown.
+ * @param text - The text to escape
+ * @returns The escaped text safe for use in markdown
+ */
+export const escapeMarkdown = (text: string): string => {
+  return text.replace(/[\\`*_{}[\]()#+!|]/g, '\\$&');
+};
+
+/**
+ * Truncates text by max length while preserving whole words when possible.
+ * Appends an ellipsis when truncation occurs.
+ */
+export const truncateAtWordBoundary = (
+  text: string,
+  maxLength: number,
+): string => {
+  if (!text || text.length <= maxLength) {
+    return text || '';
+  }
+
+  const truncated = text.slice(0, maxLength);
+  const lastSpace = truncated.lastIndexOf(' ');
+
+  return `${lastSpace > 0 ? truncated.slice(0, lastSpace) : truncated}...`;
+};
+
+/**
+ * Regex to test if a string contains special characters.
+ * Matches any character that is NOT alphanumeric, underscore, or dot.
+ * Used for validating user input like emoji shortcuts or mentions.
+ */
+export const specialCharsRegex = /[^A-Za-z0-9_.]/;

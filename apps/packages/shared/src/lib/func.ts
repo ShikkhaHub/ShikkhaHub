@@ -1,0 +1,354 @@
+import type { MouseEvent } from 'react';
+import type ReactModal from 'react-modal';
+import { BROADCAST_CHANNEL_NAME, isBrave, isTesting } from './constants';
+import type { LogEvent } from '../hooks/log/useLogQueue';
+
+export type EmptyObjectLiteral = Record<string, never | string>;
+
+export type EmptyPromise = () => Promise<void>;
+type RuntimeWindow = Window & {
+  reactModalInit?: boolean;
+  eventControllers?: Record<string, AbortController | null>;
+  webkit?: {
+    messageHandlers?: Record<string, unknown>;
+  };
+};
+
+export const nextTick = (): Promise<unknown> =>
+  new Promise((resolve) => setTimeout(resolve));
+
+export const parseOrDefault = <T = unknown>(data: string): T | string => {
+  try {
+    return JSON.parse(data);
+  } catch (ex) {
+    return data;
+  }
+};
+
+export const isNullOrUndefined = (param: unknown): boolean =>
+  typeof param === 'undefined' || param === null;
+
+export const disabledRefetch = {
+  refetchIntervalInBackground: false,
+  refetchOnMount: false,
+  refetchOnReconnect: false,
+  refetchOnWindowFocus: false,
+};
+
+Object.freeze(disabledRefetch);
+
+export const postWindowMessage = (
+  eventKey: string,
+  params: EmptyObjectLiteral,
+  attributes = '*',
+): void => window.opener?.postMessage?.({ ...params, eventKey }, attributes);
+
+export const checkIsExtension = (): boolean => !!process.env.TARGET_BROWSER;
+export const isExtension = !!process.env.TARGET_BROWSER;
+export const isFirefoxExtension = process.env.TARGET_BROWSER === 'firefox';
+export const isChromeExtension = process.env.TARGET_BROWSER === 'chrome';
+
+export const isPWA = (): boolean =>
+  // @ts-expect-error - Safari only, not web standard.
+  globalThis?.navigator?.standalone ||
+  globalThis?.matchMedia('(display-mode: standalone)')?.matches;
+
+export const defaultSearchDebounceMs = 500;
+
+export const getRandomNumber = (min: number, max: number): number => {
+  const range = max - min + 1;
+
+  return Math.floor(Math.random() * range) + min;
+};
+
+export const isSpecialKeyPressed = ({
+  event,
+}: {
+  event: MouseEvent | KeyboardEvent;
+}): boolean => {
+  return event.ctrlKey || event.metaKey;
+};
+
+const appleDeviceMatch = /(Mac|iPhone|iPod|iPad)/i;
+
+export const isAppleDevice = (): boolean => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return appleDeviceMatch.test(window.navigator.platform);
+};
+
+export const isIOS = (): boolean =>
+  /iPhone|iPad/i.test(globalThis?.navigator.userAgent);
+
+export const isIOSNative = (): boolean => {
+  const runtimeWindow = globalThis as unknown as RuntimeWindow;
+  return (
+    !!runtimeWindow.webkit &&
+    !!runtimeWindow.webkit.messageHandlers &&
+    document.documentElement.classList.contains('ios')
+  );
+};
+
+export enum ArrowKeyEnum {
+  Up = 'ArrowUp',
+  Right = 'ArrowRight',
+  Down = 'ArrowDown',
+  Left = 'ArrowLeft',
+}
+
+export const wrapStopPropagation =
+  (callback: () => void): ((event: MouseEvent) => unknown) =>
+  (event: MouseEvent) => {
+    event.stopPropagation();
+    callback();
+  };
+
+export const sortAlphabeticallyByProperty =
+  <T>(property: keyof T) =>
+  (a: T, b: T): number => {
+    if (a[property] < b[property]) {
+      return -1;
+    }
+
+    if (a[property] > b[property]) {
+      return 1;
+    }
+
+    return 0;
+  };
+
+export enum UserAgent {
+  Chrome = 'Chrome',
+  CriOS = 'CriOS', // Chrome running on iOS
+  Edge = 'Edg', // intended to be Edg, not Edge
+  Android = 'Android',
+  Firefox = 'Firefox',
+  Safari = 'Safari',
+}
+
+export enum BrowserName {
+  Chrome = 'Chrome',
+  Brave = 'Brave',
+  Firefox = 'Firefox',
+  Safari = 'Safari',
+  Edge = 'Edge',
+  Other = 'Other',
+}
+
+export const checkIsBrowser = (agent: UserAgent): boolean =>
+  globalThis?.navigator?.userAgent?.includes(agent);
+
+export const checkIsChromeOnly = (): boolean =>
+  (checkIsBrowser(UserAgent.Chrome) || checkIsBrowser(UserAgent.CriOS)) &&
+  !checkIsBrowser(UserAgent.Edge);
+
+export const getCurrentBrowserName = (): BrowserName => {
+  if (checkIsChromeOnly()) {
+    return BrowserName.Chrome;
+  }
+
+  if (isBrave()) {
+    return BrowserName.Brave;
+  }
+
+  if (checkIsBrowser(UserAgent.Firefox)) {
+    return BrowserName.Firefox;
+  }
+
+  if (checkIsBrowser(UserAgent.Edge)) {
+    return BrowserName.Edge;
+  }
+
+  if (checkIsBrowser(UserAgent.Safari)) {
+    return BrowserName.Safari;
+  }
+
+  return BrowserName.Other;
+};
+
+// Browsers we ship the daily.dev extension for — anything embed-extension
+// related (including GrowthBook enrollment for the reader experiment) should
+// gate on this so users on browsers we don't ship for never get dragged into
+// a flow that can never complete for them. Only Chrome and Edge ship today.
+export const isExtensionCapableBrowser = (): boolean => {
+  const name = getCurrentBrowserName();
+  return name === BrowserName.Chrome || name === BrowserName.Edge;
+};
+
+export const shuffleArray = <T>(array: T[]): T[] => {
+  const newArray = array.slice();
+
+  // fisher-yates
+  for (let i = newArray.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+
+    const temp = newArray[i];
+    newArray[i] = newArray[j];
+    newArray[j] = temp;
+  }
+
+  return newArray;
+};
+
+export const initReactModal = ({
+  modalObject,
+  appElement,
+  defaultStyles,
+}: {
+  modalObject: {
+    setAppElement: (element: string | HTMLElement) => void;
+    defaultStyles: ReactModal.Styles;
+  };
+  appElement: string | HTMLElement;
+  defaultStyles?: ReactModal.Styles;
+}): void => {
+  const runtimeWindow = globalThis as unknown as RuntimeWindow;
+
+  if (isTesting) {
+    return;
+  }
+
+  if (runtimeWindow.reactModalInit) {
+    return;
+  }
+
+  modalObject.setAppElement(appElement);
+  // eslint-disable-next-line no-param-reassign
+  modalObject.defaultStyles = defaultStyles || {};
+
+  runtimeWindow.reactModalInit = true;
+};
+
+export const isMobile = (): boolean =>
+  globalThis?.localStorage.mobile || globalThis?.navigator.maxTouchPoints > 1;
+
+export const shouldUseNativeShare = (): boolean =>
+  'share' in globalThis?.navigator && isMobile();
+
+export const shouldUseSocialAuthPopup = (): boolean => {
+  if (isIOSNative()) {
+    return false;
+  }
+
+  if (isBrave() && isMobile()) {
+    return false;
+  }
+
+  return true;
+};
+
+interface BroadcastMessage {
+  eventKey: string;
+  [key: string]: unknown;
+}
+
+export const broadcastMessage = (
+  message: BroadcastMessage,
+  channelName: string = BROADCAST_CHANNEL_NAME,
+): void => {
+  const channel = new BroadcastChannel(channelName);
+  channel.postMessage(message);
+  channel.close();
+};
+
+export const promisifyEventListener = <T, E = unknown>(
+  type: string,
+  listener: (event: CustomEvent<E>) => T | Promise<T>,
+  options?: { once?: boolean },
+): Promise<T> => {
+  const runtimeWindow = globalThis as unknown as RuntimeWindow;
+  const { once = true } = options || {};
+  return new Promise((resolve) => {
+    if (!runtimeWindow.eventControllers) {
+      runtimeWindow.eventControllers = {};
+    }
+    const { eventControllers } = runtimeWindow;
+
+    if (eventControllers[type]) {
+      eventControllers[type].abort();
+    }
+
+    const controller = new AbortController();
+    eventControllers[type] = controller;
+
+    const eventListener: EventListener = async (event: Event) => {
+      eventControllers[type] = null;
+      resolve(await listener(event as CustomEvent<E>));
+    };
+
+    globalThis.addEventListener(type, eventListener, {
+      once,
+      signal: controller.signal,
+    });
+  });
+};
+
+export type BooleanPromise = Promise<{ successful: boolean }>;
+
+type SafeContextHook<T> = T | undefined;
+
+export const safeContextHookExport = <Args extends unknown[], R>(
+  hook: (...props: Args) => R,
+  errorMessage: string,
+  defaultReturn?: SafeContextHook<R>,
+): ((...props: Args) => SafeContextHook<R>) => {
+  return function useSafeContextHook(...props: Args): SafeContextHook<R> {
+    try {
+      return hook(...props) as SafeContextHook<R>;
+    } catch (error) {
+      if (error instanceof Error && errorMessage === error.message) {
+        return defaultReturn;
+      }
+
+      throw error;
+    }
+  };
+};
+
+export const mergeContextExtra = <TData>({
+  event,
+  data,
+}: {
+  event: LogEvent;
+  data?: TData;
+}): LogEvent => {
+  if (!data) {
+    return event;
+  }
+
+  let extra: Record<string, unknown> | undefined;
+
+  if (event.extra) {
+    try {
+      extra = JSON.parse(event.extra);
+    } catch {
+      // If parsing fails, we keep extra as is
+    }
+  }
+
+  const mergedExtra = {
+    ...extra,
+    ...data,
+  };
+
+  return {
+    ...event,
+    extra: Object.keys(mergedExtra).length
+      ? JSON.stringify(mergedExtra)
+      : undefined,
+  };
+};
+
+export const getPercentage = (total: number, part: number): number => {
+  if (total === 0) {
+    return 0;
+  }
+  return Math.round((part / total) * 100);
+};
+
+export const getFirstQueryParam = (
+  queryParam: string | string[] | undefined,
+): string | undefined =>
+  Array.isArray(queryParam) ? queryParam[0] : queryParam;

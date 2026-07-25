@@ -1,0 +1,2413 @@
+import { setTimeout } from 'node:timers/promises';
+import { FastifyInstance } from 'fastify';
+import request from 'supertest';
+import {
+  createMockNjordTransport,
+  GraphQLTestingState,
+  initializeGraphQLTesting,
+  MockContext,
+  saveFixtures,
+  TEST_UA,
+} from './helpers';
+import createOrGetConnection from '../src/db';
+import { DataSource } from 'typeorm';
+import {
+  Alerts,
+  ALERTS_DEFAULT,
+  ArticlePost,
+  Banner,
+  Feature,
+  FeatureType,
+  Feed,
+  MachineSource,
+  MarketingCta,
+  MarketingCtaStatus,
+  NotificationV2,
+  Organization,
+  Post,
+  Settings,
+  SETTINGS_DEFAULT,
+  Source,
+  SourceMember,
+  SourceType,
+  SQUAD_IMAGE_PLACEHOLDER,
+  SquadSource,
+  User,
+  UserMarketingCta,
+  UserNotification,
+} from '../src/entity';
+import { DatasetLocation } from '../src/entity/dataset/DatasetLocation';
+import {
+  OrganizationMemberRole,
+  SourceMemberRoles,
+  sourceRoleRank,
+} from '../src/roles';
+import { notificationV2Fixture } from './fixture/notifications';
+import { userCreatedDate, usersFixture } from './fixture/user';
+import {
+  deleteKeysByPattern,
+  getRedisObject,
+  getRedisObjectExpiry,
+  ioRedisPool,
+  RedisMagicValues,
+  setRedisObject,
+} from '../src/redis';
+import {
+  FEED_SURVEY_INTERVAL,
+  generateStorageKey,
+  REDIS_BANNER_KEY,
+  StorageKey,
+  StorageTopic,
+} from '../src/config';
+import nock from 'nock';
+import { subDays } from 'date-fns';
+import setCookieParser from 'set-cookie-parser';
+import { postsFixture } from './fixture/post';
+import { sourcesFixture } from './fixture/source';
+import { SourcePermissions } from '../src/schema/sources';
+import { base64 } from 'graphql-relay/utils/base64';
+import { cookies } from '../src/cookies';
+import { signJwt } from '../src/auth';
+import {
+  DEFAULT_TIMEZONE,
+  submitArticleThreshold,
+  THREE_MONTHS_IN_SECONDS,
+  updateFlagsStatement,
+} from '../src/common';
+import { saveReturnAlerts } from '../src/schema/alerts';
+import { CoresRole, UserVote } from '../src/types';
+import { BootAlerts, FunnelBoot } from '../src/routes/boot';
+import { excludeProperties } from '../src/routes/boot';
+import { SubscriptionCycles } from '../src/paddle';
+import * as njordCommon from '../src/common/njord';
+import { Credits, EntityType } from '@dailydotdev/schema';
+import { createClient } from '@connectrpc/connect';
+import { FunnelState } from '../src/integrations/freyja';
+import { SubscriptionProvider, SubscriptionStatus } from '../src/common/plus';
+import {
+  ContentPreferenceOrganization,
+  ContentPreferenceOrganizationStatus,
+} from '../src/entity/contentPreference/ContentPreferenceOrganization';
+import { UserExperienceWork } from '../src/entity/user/experiences/UserExperienceWork';
+import { UserExperienceEducation } from '../src/entity/user/experiences/UserExperienceEducation';
+import * as betterAuthModule from '../src/betterAuth';
+import { remoteConfig } from '../src/remoteConfig';
+import { LiveRoom } from '../src/entity/LiveRoom';
+import { LiveRoomStatus } from '../src/common/schema/liveRooms';
+
+let app: FastifyInstance;
+let con: DataSource;
+let state: GraphQLTestingState;
+
+const BASE_BODY = {
+  alerts: {
+    ...excludeProperties(ALERTS_DEFAULT, ['lastFeedSettingsFeedback']),
+    lastChangelog: expect.any(String),
+    lastBanner: expect.any(String),
+    shouldShowFeedFeedback: false,
+  },
+  settings: { ...SETTINGS_DEFAULT },
+  notifications: { unreadNotificationsCount: 0 },
+  liveRooms: { hasLive: false },
+  squads: [],
+  visit: {
+    sessionId: expect.any(String),
+    visitId: expect.any(String),
+  },
+  exp: { f: 'enc', e: [], a: {} },
+  geo: {},
+  engagementCreatives: [],
+};
+
+const LOGGED_IN_BODY = {
+  ...BASE_BODY,
+  alerts: {
+    ...BASE_BODY.alerts,
+    bootPopup: true,
+    flags: {},
+  },
+  accessToken: {
+    expiresIn: expect.any(String),
+    token: expect.any(String),
+  },
+  user: {
+    ...excludeProperties(usersFixture[0], ['notificationFlags']),
+    createdAt: (usersFixture[0].createdAt as Date).toISOString(),
+    permalink: 'http://localhost:5002/idoshamun',
+    providers: [null],
+    roles: [],
+    title: null,
+    timezone: DEFAULT_TIMEZONE,
+    reputation: 10,
+    portfolio: null,
+    company: null,
+    experienceLevel: null,
+    isTeamMember: false,
+    twitter: null,
+    github: 'idogithub',
+    hashnode: null,
+    bluesky: null,
+    roadmap: null,
+    threads: null,
+    codepen: null,
+    reddit: null,
+    stackoverflow: null,
+    youtube: null,
+    linkedin: null,
+    mastodon: null,
+    readme: null,
+    language: undefined,
+    isPlus: false,
+    defaultFeedId: null,
+    flags: {
+      showPlusGift: false,
+      lastExtensionUse: null,
+    },
+    balance: {
+      amount: 0,
+    },
+    subscriptionFlags: {},
+    coresRole: CoresRole.None,
+    clickbaitTries: null,
+    hasLocationSet: false,
+    location: null,
+    hideExperience: false,
+    profileCompletion: {
+      percentage: 20,
+      hasProfileImage: true,
+      hasHeadline: false,
+      hasExperienceLevel: false,
+      hasWork: false,
+      hasEducation: false,
+    },
+  },
+  marketingCta: null,
+  marketingCtaVariants: [],
+  feeds: [],
+};
+
+const ANONYMOUS_BODY = {
+  ...BASE_BODY,
+  settings: SETTINGS_DEFAULT,
+  user: {
+    id: expect.any(String),
+    firstVisit: expect.any(String),
+    shouldVerify: false,
+  },
+};
+
+const getBootAlert = (data: Alerts): BootAlerts =>
+  new Object({
+    ...excludeProperties(saveReturnAlerts(data), [
+      'userId',
+      'lastFeedSettingsFeedback',
+    ]),
+    shouldShowFeedFeedback:
+      subDays(new Date(), FEED_SURVEY_INTERVAL) > data.lastFeedSettingsFeedback,
+  }) as BootAlerts;
+
+jest.mock('../src/growthbook', () => ({
+  ...(jest.requireActual('../src/growthbook') as Record<string, unknown>),
+  loadFeatures: jest.fn(),
+  getEncryptedFeatures: () => 'enc',
+  getUserGrowthBookInstance: () => {
+    return {
+      loadFeatures: jest.fn(),
+      getFeatures: jest.fn(),
+      getFeatureValue: () => 'gbId',
+    };
+  },
+}));
+
+beforeAll(async () => {
+  con = await createOrGetConnection();
+  state = await initializeGraphQLTesting(() => new MockContext(con));
+  app = state.app;
+});
+
+beforeEach(async () => {
+  jest.clearAllMocks();
+  await con.getRepository(LiveRoom).createQueryBuilder().delete().execute();
+  await con.getRepository(User).save(usersFixture[0]);
+  await con.getRepository(Source).save(sourcesFixture);
+  await con.getRepository(Post).save(postsFixture);
+  await ioRedisPool.execute((client) => client.flushall());
+
+  await deleteKeysByPattern('njord:cores_balance:*');
+
+  const mockTransport = createMockNjordTransport();
+  jest
+    .spyOn(njordCommon, 'getNjordClient')
+    .mockImplementation(() => createClient(Credits, mockTransport));
+});
+
+const BASE_PATH = '/boot';
+
+const mockLoggedInCookie = async (userId = '1') => {
+  const accessToken = await signJwt({ userId, roles: [] }, 15 * 60 * 1000);
+  return `${cookies.auth.key}=${app.signCookie(accessToken.token)}`;
+};
+
+describe('anonymous boot', () => {
+  it('should return defaults', async () => {
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+    expect(res.body).toEqual(ANONYMOUS_BODY);
+  });
+
+  it('should indicate when there are live rooms', async () => {
+    await con.getRepository(LiveRoom).save({
+      id: '32ad3407-0d6a-4d95-98c2-bc5a3d7cf4d1',
+      hostId: '1',
+      topic: 'Live boot hint',
+      mode: 'moderated',
+      status: LiveRoomStatus.Live,
+    });
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+
+    expect(res.body.liveRooms).toEqual({ hasLive: true });
+  });
+
+  it('should reuse the cached live rooms boot hint', async () => {
+    const first = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+
+    await con.getRepository(LiveRoom).save({
+      id: '61168086-ce61-4c1a-a56e-dcf173d31150',
+      hostId: '1',
+      topic: 'Recently started room',
+      mode: 'moderated',
+      status: LiveRoomStatus.Live,
+    });
+
+    const second = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', first.headers['set-cookie'])
+      .expect(200);
+
+    expect(first.body.liveRooms).toEqual({ hasLive: false });
+    expect(second.body.liveRooms).toEqual({ hasLive: false });
+  });
+
+  it('should keep the same tracking and session id', async () => {
+    const first = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+    const second = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', first.headers['set-cookie'])
+      .expect(200);
+    expect(second.body.user.id).toEqual(first.body.user.id);
+    expect(second.body.visit.sessionId).toEqual(first.body.visit.sessionId);
+  });
+
+  it('should read join_referral cookie', async () => {
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', ['join_referral=1:knightcampaign'])
+      .expect(200);
+    expect(res.body).toEqual({
+      ...ANONYMOUS_BODY,
+      user: {
+        id: expect.any(String),
+        firstVisit: expect.any(String),
+        referralId: '1',
+        referralOrigin: 'knightcampaign',
+        shouldVerify: false,
+      },
+      visit: {
+        visitId: expect.any(String),
+      },
+    });
+  });
+
+  it('should set first visit value if null', async () => {
+    const first = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+    expect(first.body.user.firstVisit).toBeTruthy();
+    await ioRedisPool.execute((client) => client.flushall());
+    const second = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', first.headers['set-cookie'])
+      .expect(200);
+    expect(second.body.user.id).toEqual(first.body.user.id);
+    expect(second.body.user.firstVisit).toBeTruthy();
+    expect(second.body.user.firstVisit).not.toEqual(first.body.user.firstVisit);
+  });
+
+  it('should retain first visit value if not null', async () => {
+    const first = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+    expect(first.body.user.firstVisit).toBeTruthy();
+    const second = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', first.headers['set-cookie'])
+      .expect(200);
+    expect(second.body.user.id).toEqual(first.body.user.id);
+    expect(second.body.user.firstVisit).toBeTruthy();
+    expect(second.body.user.firstVisit).toEqual(first.body.user.firstVisit);
+  });
+
+  it('should extend the TTL for redis cache if user visits a second time', async () => {
+    const first = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+
+    const key = generateStorageKey(
+      StorageTopic.Boot,
+      'first_visit',
+      first.body.user.id,
+    );
+
+    const firstTTL = await ioRedisPool.execute((client) => client.ttl(key));
+    await setTimeout(1000);
+    await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', first.headers['set-cookie'])
+      .expect(200);
+    const secondTTL = await ioRedisPool.execute((client) => client.ttl(key));
+    // Should have reset the TTL
+    expect(firstTTL).toEqual(secondTTL);
+  });
+
+  it('should return anonymous boot if jwt is expired', async () => {
+    const accessToken = await signJwt(
+      {
+        userId: '1',
+        roles: [],
+      },
+      -15 * 60 * 1000,
+    );
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set(
+        'Cookie',
+        `${cookies.auth.key}=${app.signCookie(accessToken.token)};`,
+      )
+      .expect(200);
+    expect(res.body).toEqual(ANONYMOUS_BODY);
+  });
+});
+
+describe('recruiter default theme', () => {
+  it('should return light theme for anonymous user with referrer=recruiter', async () => {
+    const res = await request(app.server)
+      .get(`${BASE_PATH}?referrer=recruiter`)
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+    expect(res.body.settings.theme).toEqual('bright');
+  });
+
+  it('should return dark theme for anonymous user without referrer', async () => {
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+    expect(res.body.settings.theme).toEqual('darcula');
+  });
+
+  it('should return dark theme for unknown referrer values', async () => {
+    const res = await request(app.server)
+      .get(`${BASE_PATH}?referrer=unknown`)
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+    expect(res.body.settings.theme).toEqual('darcula');
+  });
+
+  it('should persist theme in Redis and return it on subsequent visits', async () => {
+    // First visit with recruiter referrer
+    const first = await request(app.server)
+      .get(`${BASE_PATH}?referrer=recruiter`)
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+    expect(first.body.settings.theme).toEqual('bright');
+
+    // Second visit without referrer should still return light theme
+    const second = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', first.headers['set-cookie'])
+      .expect(200);
+    expect(second.body.settings.theme).toEqual('bright');
+  });
+
+  it('should not override stored theme with new referrer', async () => {
+    // First visit without referrer (dark theme)
+    const first = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+    expect(first.body.settings.theme).toEqual('darcula');
+
+    // Second visit with recruiter referrer should still return dark theme
+    const second = await request(app.server)
+      .get(`${BASE_PATH}?referrer=recruiter`)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', first.headers['set-cookie'])
+      .expect(200);
+    expect(second.body.settings.theme).toEqual('darcula');
+  });
+
+  it('should store theme in Redis with correct key pattern', async () => {
+    const res = await request(app.server)
+      .get(`${BASE_PATH}?referrer=recruiter`)
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+
+    const trackingId = res.body.user.id;
+    const themeKey = generateStorageKey(StorageTopic.Boot, 'theme', trackingId);
+    const storedTheme = await getRedisObject(themeKey);
+    expect(storedTheme).toEqual('bright');
+  });
+
+  it('should persist theme after login', async () => {
+    const anon = await request(app.server)
+      .get(`${BASE_PATH}?referrer=recruiter`)
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+    expect(anon.body.settings.theme).toEqual('bright');
+
+    // Simulate theme migration on login
+    const themeKey = generateStorageKey(StorageTopic.Boot, 'theme', '1');
+    await setRedisObject(themeKey, 'bright');
+
+    const loggedIn = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(loggedIn.body.settings.theme).toEqual('bright');
+  });
+
+  it('should prefer DB settings over Redis theme', async () => {
+    const themeKey = generateStorageKey(StorageTopic.Boot, 'theme', '1');
+    await setRedisObject(themeKey, 'bright');
+    await con.getRepository(Settings).save({ userId: '1', theme: 'darcula' });
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.settings.theme).toEqual('darcula');
+  });
+});
+
+describe('logged in boot', () => {
+  it('should boot data when jwt cookie is provided', async () => {
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body).toEqual({
+      ...LOGGED_IN_BODY,
+      user: {
+        ...LOGGED_IN_BODY.user,
+        canSubmitArticle:
+          LOGGED_IN_BODY.user.reputation >= submitArticleThreshold,
+      },
+    });
+  });
+
+  it('should boot data when better auth session cookie is provided', async () => {
+    jest.spyOn(betterAuthModule, 'getBetterAuth').mockReturnValue({
+      api: {
+        getSession: async () =>
+          ({
+            user: { id: '1' },
+            session: {
+              expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            },
+          }) as unknown,
+      },
+    } as ReturnType<typeof betterAuthModule.getBetterAuth>);
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', `${cookies.authSession.key}=session`)
+      .expect(200);
+
+    expect(res.body).toEqual({
+      ...LOGGED_IN_BODY,
+      user: {
+        ...LOGGED_IN_BODY.user,
+        canSubmitArticle:
+          LOGGED_IN_BODY.user.reputation >= submitArticleThreshold,
+      },
+    });
+  });
+
+  it('should set lastExtensionUse when app header is extension', async () => {
+    const userId = '1';
+    const requestStart = Date.now();
+
+    await request(app.server)
+      .get(BASE_PATH)
+      .set('app', 'extension')
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie(userId))
+      .expect(200);
+
+    await setTimeout(50);
+
+    const user = await con.getRepository(User).findOneBy({ id: userId });
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    expect(user.flags.lastExtensionUse).toBeTruthy();
+    expect(
+      new Date(user.flags.lastExtensionUse as Date).getTime(),
+    ).toBeGreaterThanOrEqual(requestStart);
+    expect(user.inc).toBeGreaterThan(0);
+  });
+
+  it('should not set lastExtensionUse when app header is not extension', async () => {
+    const userId = '1';
+
+    await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie(userId))
+      .expect(200);
+
+    await setTimeout(50);
+
+    const user = await con.getRepository(User).findOneBy({ id: userId });
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    expect(user.flags.lastExtensionUse).toBeFalsy();
+  });
+
+  it('should write lastExtensionUse only once per day for extension app header', async () => {
+    const userId = '1';
+
+    await request(app.server)
+      .get(BASE_PATH)
+      .set('app', 'extension')
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie(userId))
+      .expect(200);
+
+    await setTimeout(50);
+
+    const firstUser = await con.getRepository(User).findOneBy({ id: userId });
+    if (!firstUser?.flags.lastExtensionUse) {
+      throw new Error('Missing first lastExtensionUse');
+    }
+    const firstLastExtensionUse = new Date(
+      firstUser.flags.lastExtensionUse as Date,
+    ).getTime();
+
+    await request(app.server)
+      .get(BASE_PATH)
+      .set('app', 'extension')
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie(userId))
+      .expect(200);
+
+    await setTimeout(50);
+
+    const user = await con.getRepository(User).findOneBy({ id: userId });
+    if (!user?.flags.lastExtensionUse) {
+      throw new Error('User not found');
+    }
+
+    expect(new Date(user.flags.lastExtensionUse as Date).getTime()).toEqual(
+      firstLastExtensionUse,
+    );
+  });
+
+  it('should return lastExtensionUse from user flags', async () => {
+    const lastExtensionUse = new Date('2026-01-15T10:20:30.000Z');
+
+    await con.getRepository(User).update(
+      { id: '1' },
+      {
+        flags: updateFlagsStatement({
+          lastExtensionUse,
+        }),
+      },
+    );
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+
+    expect(res.body.user.flags.lastExtensionUse).toEqual(
+      lastExtensionUse.toISOString(),
+    );
+  });
+
+  it('should set hasLocationSet to true when user has location date flag', async () => {
+    await con.getRepository(User).save({
+      ...usersFixture[0],
+      flags: {
+        country: 'US',
+        location: {
+          lastStored: new Date(),
+        },
+      },
+    });
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.user.hasLocationSet).toBe(true);
+  });
+
+  it('should return location when user has locationId set', async () => {
+    const location = await con.getRepository(DatasetLocation).save({
+      country: 'United States',
+      city: 'San Francisco',
+      subdivision: 'California',
+      iso2: 'US',
+      iso3: 'USA',
+      timezone: 'America/Los_Angeles',
+      externalId: '123',
+      ranking: 1,
+    });
+
+    await con.getRepository(User).save({
+      ...usersFixture[0],
+      locationId: location.id,
+    });
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+
+    expect(res.body.user.location).toEqual({
+      id: location.id,
+      city: 'San Francisco',
+      subdivision: 'California',
+      country: 'United States',
+      externalId: '123',
+    });
+  });
+
+  it('should return null location when user has no locationId', async () => {
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+
+    expect(res.body.user.location).toBeNull();
+  });
+
+  it('should set tracking id according to user id', async () => {
+    const trackingCookie = 'da2';
+    const authCookie = await mockLoggedInCookie();
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', `${authCookie};${trackingCookie}=t;`)
+      .expect(200);
+    const cookies = setCookieParser.parse(res, { map: true });
+    expect(cookies[trackingCookie].value).toEqual('1');
+  });
+
+  it('should boot logged in user when jwt is available', async () => {
+    const accessToken = await signJwt(
+      {
+        userId: '1',
+        roles: [],
+      },
+      15 * 60 * 1000,
+    );
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set(
+        'Cookie',
+        `${cookies.auth.key}=${app.signCookie(accessToken.token)};`,
+      )
+      .expect(200);
+    expect(res.body).toEqual({
+      ...LOGGED_IN_BODY,
+      user: {
+        ...LOGGED_IN_BODY.user,
+        canSubmitArticle:
+          LOGGED_IN_BODY.user.reputation >= submitArticleThreshold,
+      },
+    });
+  });
+
+  it('should boot logged in user and refresh jwt when token expires within 3 minutes', async () => {
+    const accessToken = await signJwt(
+      {
+        userId: '1',
+        roles: [],
+      },
+      2 * 60 * 1000,
+    );
+    const key = app.signCookie(accessToken.token);
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', `${cookies.auth.key}=${key};`)
+      .expect(200);
+
+    expect(res.body).toEqual({
+      ...LOGGED_IN_BODY,
+      user: {
+        ...LOGGED_IN_BODY.user,
+        canSubmitArticle:
+          LOGGED_IN_BODY.user.reputation >= submitArticleThreshold,
+      },
+    });
+
+    const authCookie = setCookieParser.parse(res, { map: true })[
+      cookies.auth.key
+    ];
+    expect(authCookie?.value).toBeTruthy();
+    expect(authCookie?.value).not.toEqual(key);
+  });
+
+  it('should not re-issue JWT token when isPlus in payload is same as user', async () => {
+    await saveFixtures(con, User, [
+      {
+        ...usersFixture[0],
+        id: `${usersFixture[0].id}-lbnp`,
+        username: `${usersFixture[0].username}-lbnp`,
+        github: undefined,
+        subscriptionFlags: {},
+      },
+    ]);
+
+    const accessToken = await signJwt(
+      {
+        userId: `${usersFixture[0].id}-lbnp`,
+        roles: [],
+        isPlus: false,
+      },
+      15 * 60 * 1000,
+    );
+    const key = app.signCookie(accessToken.token);
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', `${cookies.auth.key}=${key};`)
+      .expect(200);
+
+    (res.get('set-cookie') as unknown as string[]).forEach((cookie) => {
+      // cookies.auth.key should not be in cookie
+      expect(cookie).not.toEqual(expect.stringContaining(cookies.auth.key));
+    });
+  });
+
+  it('should re-issue JWT token when isPlus in payload is different from user', async () => {
+    await saveFixtures(con, User, [
+      {
+        ...usersFixture[0],
+        id: `${usersFixture[0].id}-lbp`,
+        username: `${usersFixture[0].username}-lbp`,
+        github: undefined,
+      },
+    ]);
+
+    const accessToken = await signJwt(
+      {
+        userId: `${usersFixture[0].id}-lbp`,
+        roles: [],
+        isPlus: true,
+      },
+      15 * 60 * 1000,
+    );
+    const key = app.signCookie(accessToken.token);
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', `${cookies.auth.key}=${key};`)
+      .expect(200);
+
+    (res.get('set-cookie') as unknown as string[]).forEach((cookie) => {
+      if (cookie.startsWith(`${cookies.auth.key}=`)) {
+        const jwt = app.unsignCookie(
+          cookie.slice(`${cookies.auth.key}=`.length),
+        );
+        expect(jwt).not.toEqual(key);
+      }
+    });
+  });
+
+  it('should set team member to true if user is a team member', async () => {
+    await con.getRepository(Feature).save({
+      feature: FeatureType.Team,
+      userId: '1',
+      value: 1,
+    });
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.user.isTeamMember).toEqual(true);
+  });
+
+  it('should return default feed id if set', async () => {
+    await con.getRepository(Feed).save({
+      id: '1',
+      name: 'My Feed',
+      userId: '1',
+    });
+    await con.getRepository(User).save({
+      ...usersFixture[0],
+      subscriptionFlags: {
+        cycle: SubscriptionCycles.Yearly,
+      },
+      defaultFeedId: '1',
+    });
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.user.defaultFeedId).toEqual('1');
+  });
+
+  it('should not return default feed id if not plus', async () => {
+    await con.getRepository(Feed).save({
+      id: '1',
+      name: 'My Feed',
+      userId: '1',
+    });
+    await con.getRepository(User).save({
+      ...usersFixture[0],
+      defaultFeedId: '1',
+    });
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.user.defaultFeedId).toBeNull();
+  });
+
+  describe('subscriptionFlags', () => {
+    describe('provider flag', () => {
+      it('should not return provider when not set on user', async () => {
+        const res = await request(app.server)
+          .get(BASE_PATH)
+          .set('Cookie', await mockLoggedInCookie())
+          .expect(200);
+        expect(res.body.user.subscriptionFlags.provider).toBeUndefined();
+      });
+
+      it('should return the correct plus provider when paddle', async () => {
+        await con.getRepository(User).save({
+          ...usersFixture[0],
+          subscriptionFlags: {
+            provider: SubscriptionProvider.Paddle,
+          },
+        });
+        const res = await request(app.server)
+          .get(BASE_PATH)
+          .set('Cookie', await mockLoggedInCookie())
+          .expect(200);
+        expect(res.body.user.subscriptionFlags.provider).toEqual(
+          SubscriptionProvider.Paddle,
+        );
+      });
+
+      it('should return the correct plus provider when storekit', async () => {
+        await con.getRepository(User).save({
+          ...usersFixture[0],
+          subscriptionFlags: {
+            provider: SubscriptionProvider.AppleStoreKit,
+          },
+        });
+        const res = await request(app.server)
+          .get(BASE_PATH)
+          .set('Cookie', await mockLoggedInCookie())
+          .expect(200);
+        expect(res.body.user.subscriptionFlags.provider).toEqual(
+          SubscriptionProvider.AppleStoreKit,
+        );
+      });
+    });
+
+    describe('appAccountToken flag', () => {
+      it('should not return appAccountToken when not set on user', async () => {
+        const res = await request(app.server)
+          .get(BASE_PATH)
+          .set('Cookie', await mockLoggedInCookie())
+          .expect(200);
+        expect(res.body.user.subscriptionFlags.appAccountToken).toBeUndefined();
+      });
+
+      it('should not return appAccountToken when set on user', async () => {
+        await con.getRepository(User).save({
+          ...usersFixture[0],
+          subscriptionFlags: {
+            appAccountToken: 'b381c50a-b79d-4ec9-9284-973d4d5d767b',
+          },
+        });
+        const res = await request(app.server)
+          .get(BASE_PATH)
+          .set('Cookie', await mockLoggedInCookie())
+          .expect(200);
+        expect(res.body.user.subscriptionFlags.appAccountToken).toEqual(
+          'b381c50a-b79d-4ec9-9284-973d4d5d767b',
+        );
+      });
+    });
+  });
+
+  describe('balance field', () => {
+    it('should return default balance', async () => {
+      const res = await request(app.server)
+        .get(BASE_PATH)
+        .set('Cookie', await mockLoggedInCookie())
+        .expect(200);
+      expect(res.body.user.balance).toEqual({
+        amount: 0,
+      });
+    });
+
+    it('should return balance', async () => {
+      const testNjordClient = njordCommon.getNjordClient();
+      await testNjordClient.transfer({
+        idempotencyKey: crypto.randomUUID(),
+        transfers: [
+          {
+            sender: { id: 'system', type: EntityType.SYSTEM },
+            receiver: { id: '1', type: EntityType.USER },
+            amount: 100,
+          },
+        ],
+      });
+
+      const res = await request(app.server)
+        .get(BASE_PATH)
+        .set('Cookie', await mockLoggedInCookie())
+        .expect(200);
+      expect(res.body.user.balance).toEqual({
+        amount: 100,
+      });
+    });
+  });
+
+  describe('last activity', () => {
+    it('should set last activity in redis if user is part of organization', async () => {
+      await saveFixtures(con, Organization, [
+        {
+          id: 'bcc87627-7b19-40b6-a8f4-72dc94e764d5',
+          seats: 1,
+          name: 'Organization 1',
+          subscriptionFlags: {
+            cycle: SubscriptionCycles.Yearly,
+            status: SubscriptionStatus.Active,
+          },
+        },
+      ]);
+
+      await saveFixtures(con, Feed, [
+        {
+          id: '1',
+          userId: '1',
+        },
+      ]);
+
+      await saveFixtures(con, ContentPreferenceOrganization, [
+        {
+          userId: '1',
+          referenceId: 'bcc87627-7b19-40b6-a8f4-72dc94e764d5',
+          organizationId: 'bcc87627-7b19-40b6-a8f4-72dc94e764d5',
+          feedId: '1',
+          status: ContentPreferenceOrganizationStatus.Plus,
+          flags: {
+            role: OrganizationMemberRole.Owner,
+            referralToken: 'ref-token-1',
+          },
+        },
+      ]);
+
+      const userId = '1';
+      await request(app.server)
+        .get(BASE_PATH)
+        .set('Cookie', await mockLoggedInCookie(userId))
+        .expect(200);
+
+      // Wait for the onResponse hook to finish
+      await setTimeout(50);
+
+      const redisKey = generateStorageKey(
+        StorageTopic.Boot,
+        StorageKey.UserLastOnline,
+        userId,
+      );
+      const storesRedisValue = await getRedisObject(redisKey);
+
+      expect(storesRedisValue).not.toBeNull();
+      expect(new Date(parseInt(storesRedisValue!))).toBeInstanceOf(Date);
+
+      // Check expiry, to not cause it to be flaky, we check if it is within 10 seconds
+      expect(await getRedisObjectExpiry(redisKey)).toBeLessThanOrEqual(
+        THREE_MONTHS_IN_SECONDS,
+      );
+      expect(await getRedisObjectExpiry(redisKey)).toBeGreaterThanOrEqual(
+        THREE_MONTHS_IN_SECONDS - 10,
+      );
+    });
+
+    it('should not set last activity in redis if user is not part of organization', async () => {
+      const userId = '1';
+      await request(app.server)
+        .get(BASE_PATH)
+        .set('Cookie', await mockLoggedInCookie(userId))
+        .expect(200);
+      const redisKey = generateStorageKey(
+        StorageTopic.Boot,
+        StorageKey.UserLastOnline,
+        userId,
+      );
+      const storesRedisValue = await getRedisObject(redisKey);
+      expect(storesRedisValue).toBeNull();
+    });
+  });
+});
+
+describe('boot marketing cta', () => {
+  it('should not return marketing cta for anonymous user', async () => {
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+
+    expect(res.body).not.toHaveProperty('marketingCta');
+  });
+
+  it('should return null if the user has no marketing cta', async () => {
+    const userId = '1';
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie(userId))
+      .expect(200);
+
+    expect(res.body.marketingCta).toBeNull();
+    expect(
+      await getRedisObject(
+        generateStorageKey(StorageTopic.Boot, StorageKey.MarketingCta, userId),
+      ),
+    ).toEqual(RedisMagicValues.SLEEPING);
+  });
+
+  it('should not check the database if redis value is set to sleeping', async () => {
+    const userId = '1';
+    await setRedisObject(
+      generateStorageKey(StorageTopic.Boot, StorageKey.MarketingCta, userId),
+      RedisMagicValues.SLEEPING,
+    );
+
+    expect(
+      await getRedisObject(
+        generateStorageKey(StorageTopic.Boot, StorageKey.MarketingCta, userId),
+      ),
+    ).toEqual(RedisMagicValues.SLEEPING);
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie(userId))
+      .expect(200);
+
+    expect(res.body.marketingCta).toBeNull();
+    expect(
+      await getRedisObject(
+        generateStorageKey(StorageTopic.Boot, StorageKey.MarketingCta, userId),
+      ),
+    ).toEqual(RedisMagicValues.SLEEPING);
+  });
+
+  it('should return null if user has no marketing cta on future ', async () => {
+    const userId = '1';
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie(userId))
+      .expect(200);
+
+    expect(res.body.marketingCta).toBeNull();
+    expect(
+      await getRedisObject(
+        generateStorageKey(StorageTopic.Boot, StorageKey.MarketingCta, userId),
+      ),
+    ).toEqual(RedisMagicValues.SLEEPING);
+  });
+
+  it('should return marketing cta for user', async () => {
+    const userId = '1';
+
+    await con.getRepository(MarketingCta).save({
+      campaignId: 'worlds-best-campaign',
+      variant: 'card',
+      createdAt: new Date('2024-03-13 12:00:00'),
+      flags: {
+        title: 'Join the best community in the world',
+        description: 'Join the best community in the world',
+        ctaUrl: 'http://localhost:5002',
+        ctaText: 'Join now',
+      },
+    });
+    await con.getRepository(UserMarketingCta).save({
+      marketingCtaId: 'worlds-best-campaign',
+      userId,
+      createdAt: new Date('2024-03-13 12:00:00'),
+    });
+
+    expect(
+      await getRedisObject(
+        generateStorageKey(StorageTopic.Boot, StorageKey.MarketingCta, userId),
+      ),
+    ).toBeNull();
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie(userId))
+      .expect(200);
+
+    expect(res.body.marketingCta).toMatchObject({
+      campaignId: 'worlds-best-campaign',
+      variant: 'card',
+      createdAt: '2024-03-13T12:00:00.000Z',
+      flags: {
+        title: 'Join the best community in the world',
+        description: 'Join the best community in the world',
+        ctaUrl: 'http://localhost:5002',
+        ctaText: 'Join now',
+      },
+    });
+
+    expect(res.body.marketingCta).toMatchObject(
+      JSON.parse(
+        (await getRedisObject(
+          generateStorageKey(
+            StorageTopic.Boot,
+            StorageKey.MarketingCta,
+            userId,
+          ),
+        )) as string,
+      ),
+    );
+  });
+
+  it('should not return marketing cta for user if campaign is not active', async () => {
+    const userId = '1';
+
+    await con.getRepository(MarketingCta).save({
+      campaignId: 'worlds-best-campaign',
+      variant: 'card',
+      status: MarketingCtaStatus.Paused,
+      createdAt: new Date('2024-03-13 12:00:00'),
+      flags: {
+        title: 'Join the best community in the world',
+        description: 'Join the best community in the world',
+        ctaUrl: 'http://localhost:5002',
+        ctaText: 'Join now',
+      },
+    });
+    await con.getRepository(UserMarketingCta).save({
+      marketingCtaId: 'worlds-best-campaign',
+      userId,
+      createdAt: new Date('2024-03-13 12:00:00'),
+    });
+
+    expect(
+      await getRedisObject(
+        generateStorageKey(StorageTopic.Boot, StorageKey.MarketingCta, userId),
+      ),
+    ).toBeNull();
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie(userId))
+      .expect(200);
+
+    expect(res.body.marketingCta).toBeNull();
+
+    expect(
+      await getRedisObject(
+        generateStorageKey(StorageTopic.Boot, StorageKey.MarketingCta, userId),
+      ),
+    ).toEqual(RedisMagicValues.SLEEPING);
+  });
+});
+
+describe('boot alerts', () => {
+  it('should return user alerts', async () => {
+    const data = await con.getRepository(Alerts).save({
+      ...ALERTS_DEFAULT,
+      userId: '1',
+      myFeed: 'created',
+    });
+
+    const alerts = getBootAlert(data);
+    alerts['changelog'] = false;
+    alerts['banner'] = false;
+    alerts['bootPopup'] = true;
+    delete alerts['userId'];
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.alerts).toEqual({
+      ...alerts,
+      lastBanner: expect.any(String),
+      lastChangelog: expect.any(String),
+    });
+  });
+
+  it('should return banner as true', async () => {
+    await setRedisObject(REDIS_BANNER_KEY, '2023-02-06 12:00:00');
+    const data = await con.getRepository(Alerts).save({
+      ...ALERTS_DEFAULT,
+      userId: '1',
+      myFeed: 'created',
+      lastBanner: new Date('2023-02-05 12:00:00'),
+      lastChangelog: new Date('2023-02-05 12:00:00'),
+    });
+    const alerts = getBootAlert(data);
+    alerts['shouldShowFeedFeedback'] = false;
+    alerts['changelog'] = false;
+    alerts['banner'] = true;
+    alerts['bootPopup'] = true;
+    delete alerts['userId'];
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.alerts).toEqual(alerts);
+  });
+
+  it('should return banner as false', async () => {
+    await setRedisObject(REDIS_BANNER_KEY, '2023-02-05 12:00:00');
+    const data = await con.getRepository(Alerts).save({
+      ...ALERTS_DEFAULT,
+      userId: '1',
+      myFeed: 'created',
+      lastBanner: new Date('2023-02-06 12:00:00'),
+      lastChangelog: new Date('2023-02-06 12:00:00'),
+    });
+    const alerts = getBootAlert(data);
+    alerts['banner'] = false;
+    alerts['changelog'] = false;
+    alerts['bootPopup'] = true;
+    delete alerts['userId'];
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.alerts).toEqual(alerts);
+  });
+
+  it('should return banner as false if redis is false', async () => {
+    const data = await con.getRepository(Alerts).save({
+      ...ALERTS_DEFAULT,
+      userId: '1',
+      myFeed: 'created',
+      lastChangelog: new Date('2023-02-05 12:00:00'),
+      lastBanner: new Date('2023-02-05 12:00:00'),
+    });
+    const alerts = getBootAlert(data);
+    alerts['shouldShowFeedFeedback'] = false;
+    alerts['changelog'] = false;
+    alerts['banner'] = false;
+    alerts['bootPopup'] = true;
+    delete alerts['userId'];
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.alerts).toEqual(alerts);
+  });
+
+  it('should return banner as true if redis is empty', async () => {
+    const data = await con.getRepository(Alerts).save({
+      ...ALERTS_DEFAULT,
+      userId: '1',
+      myFeed: 'created',
+      lastChangelog: new Date('2023-02-05 12:00:00'),
+      lastBanner: new Date('2023-02-06 12:00:00'),
+    });
+    const banner = await con.getRepository(Banner).save({
+      timestamp: '2023-02-08T12:00:00.000Z',
+      title: 'test',
+      subtitle: 'test',
+      cta: 'test',
+      url: 'test',
+      theme: 'cabbage',
+    });
+    const alerts = getBootAlert(data);
+    alerts['banner'] = true;
+    alerts['changelog'] = false;
+    alerts['shouldShowFeedFeedback'] = false;
+    alerts['bootPopup'] = true;
+    delete alerts['userId'];
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.alerts).toEqual(alerts);
+    expect(await getRedisObject(REDIS_BANNER_KEY)).toEqual(
+      banner.timestamp.toISOString(),
+    );
+  });
+
+  it('should return showGenericReferral as true', async () => {
+    const data = await con.getRepository(Alerts).save({
+      ...ALERTS_DEFAULT,
+      userId: '1',
+      myFeed: 'created',
+      lastChangelog: new Date('2023-02-05 12:00:00'),
+      lastBanner: new Date('2023-02-05 12:00:00'),
+      banner: false,
+      changelog: false,
+      showGenericReferral: true,
+    });
+    const alerts = getBootAlert(data);
+    alerts['shouldShowFeedFeedback'] = false;
+    alerts['bootPopup'] = true;
+    delete alerts['userId'];
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.alerts).toEqual(alerts);
+  });
+
+  it('should return true on "flags.showGiftPlus" if user is gift recipient', async () => {
+    await con.getRepository(User).update(
+      { id: '1' },
+      {
+        flags: updateFlagsStatement({
+          showPlusGift: true,
+        }),
+      },
+    );
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.user.flags.showPlusGift).toEqual(true);
+  });
+});
+
+describe('boot misc', () => {
+  it('should return user settings', async () => {
+    const data = await con.getRepository(Settings).save({
+      userId: '1',
+      theme: 'bright',
+      insaneMode: true,
+      flags: { removedFlag: true } as never,
+    });
+    const settings = new Object(data);
+    delete settings['updatedAt'];
+    delete settings['userId'];
+    delete settings['bookmarkSlug'];
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.settings).toEqual({
+      ...settings,
+      flags: {
+        sidebarCustomFeedsExpanded: true,
+        sidebarOtherExpanded: true,
+        sidebarResourcesExpanded: true,
+        sidebarSquadExpanded: true,
+        sidebarBookmarksExpanded: true,
+        clickbaitShieldEnabled: true,
+        browsingContextEnabled: false,
+        highlightsPlacement: 'default',
+        legacyPostLayoutOptOut: false,
+        readerInstallPromptAcknowledged: false,
+      },
+    });
+    expect(res.body.settings.flags.removedFlag).toBeUndefined();
+  });
+
+  it('should return unread notifications count', async () => {
+    const notifs = await con.getRepository(NotificationV2).save([
+      notificationV2Fixture,
+      {
+        ...notificationV2Fixture,
+        uniqueKey: '2',
+      },
+      {
+        ...notificationV2Fixture,
+        uniqueKey: '3',
+      },
+    ]);
+    await con.getRepository(UserNotification).insert([
+      {
+        userId: '1',
+        notificationId: notifs[0].id,
+        createdAt: notificationV2Fixture.createdAt,
+      },
+      {
+        userId: '1',
+        notificationId: notifs[1].id,
+      },
+      {
+        userId: '1',
+        notificationId: notifs[2].id,
+        readAt: new Date(),
+      },
+    ]);
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.notifications).toEqual({ unreadNotificationsCount: 2 });
+  });
+
+  it('should return the user squads', async () => {
+    await con.getRepository(SquadSource).save([
+      {
+        id: 's1',
+        handle: 's1',
+        name: 'Squad',
+        private: false,
+        active: false,
+      },
+      {
+        id: 's2',
+        handle: 's2',
+        name: 'Squad 2',
+        private: true,
+        active: true,
+      },
+      {
+        id: 's3',
+        handle: 's3',
+        name: 'Squad 3',
+        private: true,
+        active: true,
+      },
+      {
+        id: 's5',
+        handle: 's5',
+        name: 'Squad 5',
+        private: true,
+        active: true,
+        memberPostingRank: sourceRoleRank[SourceMemberRoles.Moderator],
+      },
+    ]);
+    await con.getRepository(MachineSource).save([
+      {
+        id: 's4',
+        handle: 's4',
+        name: 'Source',
+        private: false,
+        active: false,
+      },
+    ]);
+    await con.getRepository(SourceMember).save([
+      {
+        sourceId: 's1',
+        userId: '1',
+        referralToken: 'rt',
+        role: SourceMemberRoles.Member,
+      },
+      {
+        sourceId: 's2',
+        userId: '1',
+        referralToken: 'rt2',
+        role: SourceMemberRoles.Member,
+      },
+      {
+        sourceId: 's4',
+        userId: '1',
+        referralToken: 'rt3',
+        role: SourceMemberRoles.Member,
+      },
+      {
+        sourceId: 's5',
+        userId: '1',
+        referralToken: 'rt5',
+        role: SourceMemberRoles.Member,
+      },
+    ]);
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.squads).toEqual([
+      {
+        active: false,
+        handle: 's1',
+        id: 's1',
+        image: SQUAD_IMAGE_PLACEHOLDER,
+        moderationRequired: false,
+        name: 'Squad',
+        permalink: 'http://localhost:5002/squads/s1',
+        public: true,
+        type: SourceType.Squad,
+        currentMember: {
+          permissions: [SourcePermissions.Post],
+        },
+      },
+      {
+        active: true,
+        handle: 's2',
+        id: 's2',
+        image: SQUAD_IMAGE_PLACEHOLDER,
+        moderationRequired: false,
+        name: 'Squad 2',
+        permalink: 'http://localhost:5002/squads/s2',
+        public: false,
+        type: SourceType.Squad,
+        currentMember: {
+          permissions: [SourcePermissions.Post],
+        },
+      },
+      {
+        active: true,
+        handle: 's5',
+        id: 's5',
+        image: SQUAD_IMAGE_PLACEHOLDER,
+        moderationRequired: false,
+        name: 'Squad 5',
+        permalink: 'http://localhost:5002/squads/s5',
+        public: false,
+        type: SourceType.Squad,
+        currentMember: {
+          permissions: [],
+        },
+      },
+    ]);
+  });
+
+  it('should not return squads users blocked from', async () => {
+    await con.getRepository(SquadSource).save([
+      {
+        id: 's1',
+        handle: 's1',
+        name: 'Squad',
+        private: false,
+        active: false,
+      },
+      {
+        id: 's3',
+        handle: 's3',
+        name: 'Squad 3',
+        private: true,
+        active: true,
+      },
+    ]);
+    await con.getRepository(MachineSource).save([
+      {
+        id: 's4',
+        handle: 's4',
+        name: 'Source',
+        private: false,
+        active: false,
+      },
+    ]);
+    await con.getRepository(SourceMember).save([
+      {
+        sourceId: 's1',
+        userId: '1',
+        referralToken: 'rt',
+        role: SourceMemberRoles.Member,
+      },
+      {
+        sourceId: 's3',
+        userId: '1',
+        referralToken: 'rt3',
+        role: SourceMemberRoles.Blocked,
+      },
+    ]);
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.squads).toEqual([
+      {
+        active: false,
+        handle: 's1',
+        id: 's1',
+        image: SQUAD_IMAGE_PLACEHOLDER,
+        moderationRequired: false,
+        name: 'Squad',
+        permalink: 'http://localhost:5002/squads/s1',
+        public: true,
+        type: SourceType.Squad,
+        currentMember: {
+          permissions: [SourcePermissions.Post],
+        },
+      },
+    ]);
+  });
+
+  it('should return the user feeds', async () => {
+    const feeds = [
+      {
+        id: '1',
+        userId: '1',
+
+        slug: '1',
+      },
+      {
+        id: 'cf1',
+        userId: '1',
+        flags: {
+          name: 'Cool feed',
+        },
+        slug: 'cool-feed-cf1',
+      },
+      {
+        id: 'cf2',
+        userId: '1',
+        flags: {
+          name: 'PHP feed',
+        },
+        slug: 'php-feed-cf2',
+      },
+      {
+        id: 'cf3',
+        userId: '2',
+        flags: {
+          name: 'Awful feed',
+        },
+        slug: 'awful-feed-cf3',
+      },
+    ];
+    await saveFixtures(con, User, usersFixture);
+    await con.getRepository(Feed).save(feeds);
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.feeds).toMatchObject([
+      {
+        id: 'cf1',
+        userId: '1',
+        flags: {
+          name: 'Cool feed',
+        },
+        slug: 'cool-feed-cf1',
+      },
+      {
+        id: 'cf2',
+        userId: '1',
+        flags: {
+          name: 'PHP feed',
+        },
+        slug: 'php-feed-cf2',
+      },
+    ]);
+  });
+});
+
+describe('boot experimentation', () => {
+  it('should return recent experiments from redis', async () => {
+    await ioRedisPool.execute((client) =>
+      client.hset('exp:1', {
+        e1: `v1:${new Date(2023, 5, 20).getTime()}`,
+        e2: `v2:${new Date(2023, 5, 19).getTime()}`,
+      }),
+    );
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.exp.e).toEqual([base64('e1:v1'), base64('e2:v2')]);
+  });
+
+  it('should return features as attributes', async () => {
+    await con.getRepository(Feature).save([
+      {
+        userId: '1',
+        feature: FeatureType.Search,
+      },
+      {
+        userId: '1',
+        feature: FeatureType.Squad,
+      },
+    ]);
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.exp.a).toEqual({
+      search: 1,
+      squad: 1,
+    });
+  });
+});
+
+describe('companion boot', () => {
+  const POST_DATA = {
+    author: null,
+    bookmarked: null,
+    commentsPermalink: 'http://localhost:5002/posts/p1-p1',
+    createdAt: expect.any(String),
+    id: 'p1',
+    image: 'https://daily.dev/image.jpg',
+    numComments: 0,
+    numUpvotes: 0,
+    permalink: 'http://localhost:4000/r/sp1',
+    readTime: null,
+    source: {
+      id: 'a',
+      image: 'http://image.com/a',
+      name: 'A',
+    },
+    summary: null,
+    tags: ['javascript', 'webdev'],
+    title: 'P1',
+    trending: null,
+    upvoted: null,
+    downvoted: null,
+    userState: null,
+  };
+
+  it('should support anonymous user', async () => {
+    const res = await request(app.server)
+      .get(`${BASE_PATH}/companion`)
+      .query({ url: (postsFixture[0] as ArticlePost).url })
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+    expect(res.body).toEqual({
+      ...ANONYMOUS_BODY,
+      postData: POST_DATA,
+    });
+  });
+
+  it('should support logged user', async () => {
+    const res = await request(app.server)
+      .get(`${BASE_PATH}/companion`)
+      .query({ url: (postsFixture[0] as ArticlePost).url })
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body).toEqual({
+      ...LOGGED_IN_BODY,
+      postData: {
+        ...POST_DATA,
+        bookmarked: false,
+        upvoted: false,
+        downvoted: false,
+        userState: {
+          vote: UserVote.None,
+        },
+      },
+      user: {
+        ...LOGGED_IN_BODY.user,
+        canSubmitArticle:
+          LOGGED_IN_BODY.user.reputation >= submitArticleThreshold,
+      },
+    });
+  });
+
+  it('should handle url not found', async () => {
+    const res = await request(app.server)
+      .get(`${BASE_PATH}/companion`)
+      .query({ url: 'notfound' })
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+    expect(res.body).toEqual(ANONYMOUS_BODY);
+  });
+
+  it('should handle url not found', async () => {
+    const res = await request(app.server)
+      .get(`${BASE_PATH}/companion`)
+      .query({ url: 'notfound' })
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+    expect(res.body).toEqual(ANONYMOUS_BODY);
+  });
+});
+
+describe('boot alerts shouldShowFeedFeedback property', () => {
+  it('should be false when the user has no alerts', async () => {
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+    expect(res.body.alerts.shouldShowFeedFeedback).toBeFalsy();
+  });
+
+  it('should be false when the user has seen the survey few days ago', async () => {
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.alerts.shouldShowFeedFeedback).toBeFalsy();
+  });
+
+  it('should be true when the user has has seen the survey more than 30 days ago', async () => {
+    await con
+      .getRepository(Alerts)
+      .update(
+        { userId: '1' },
+        { lastFeedSettingsFeedback: subDays(new Date(), 30) },
+      );
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+    expect(res.body.alerts.shouldShowFeedFeedback).toBeTruthy();
+  });
+});
+
+describe('funnel boot', () => {
+  const FUNNEL_DATA: FunnelState = {
+    session: {
+      userId: '1',
+      id: 'sessionId',
+      currentStep: '5',
+    },
+    funnel: {
+      id: 'funnelId',
+      version: 2,
+    },
+  };
+
+  const FUNNEL_BOOT_BODY: FunnelBoot = {
+    ...ANONYMOUS_BODY,
+    exp: BASE_BODY.exp,
+    funnelState: FUNNEL_DATA,
+  };
+
+  it('should return the funnel data for an anonymous user', async () => {
+    nock(process.env.FREYJA_ORIGIN)
+      .post('/api/sessions', {
+        userId: '1',
+        funnelId: 'funnelId',
+        version: 2,
+      })
+      .reply(200, JSON.stringify(FUNNEL_DATA));
+
+    const res = await request(app.server)
+      .get(`${BASE_PATH}/funnel?id=funnelId&v=2`)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', `${cookies.tracking.key}=1;`)
+      .expect(200);
+    expect(res.body).toEqual(FUNNEL_BOOT_BODY);
+  });
+
+  it('should return the logged in user', async () => {
+    nock(process.env.FREYJA_ORIGIN)
+      .post('/api/sessions')
+      .reply(200, JSON.stringify(FUNNEL_DATA));
+
+    const accessToken = await signJwt(
+      {
+        userId: '1',
+        roles: [],
+      },
+      15 * 60 * 1000,
+    );
+
+    const res = await request(app.server)
+      .get(`${BASE_PATH}/funnel?id=funnelId`)
+      .set('User-Agent', TEST_UA)
+      .set(
+        'Cookie',
+        `${cookies.auth.key}=${app.signCookie(accessToken.token)};`,
+      )
+      .expect(200);
+    expect(res.body).toEqual({
+      ...FUNNEL_BOOT_BODY,
+      user: excludeProperties(LOGGED_IN_BODY.user, [
+        'balance',
+        'flags',
+        'isPlus',
+        'isTeamMember',
+        'language',
+        'roles',
+        'subscriptionFlags',
+        'clickbaitTries',
+        'hasLocationSet',
+        'location',
+        'readme',
+        'profileCompletion',
+      ]),
+    });
+  });
+
+  it('should return anonymous user if jwt is expired', async () => {
+    nock(process.env.FREYJA_ORIGIN)
+      .post('/api/sessions')
+      .reply(200, JSON.stringify(FUNNEL_DATA));
+
+    const accessToken = await signJwt(
+      {
+        userId: '1',
+        roles: [],
+      },
+      -15 * 60 * 1000,
+    );
+
+    const res = await request(app.server)
+      .get(`${BASE_PATH}/funnel?id=funnelId`)
+      .set('User-Agent', TEST_UA)
+      .set(
+        'Cookie',
+        `${cookies.auth.key}=${app.signCookie(accessToken.token)};`,
+      )
+      .expect(200);
+    expect(res.body).toEqual(FUNNEL_BOOT_BODY);
+  });
+
+  it('should set cookie for the new funnel', async () => {
+    nock(process.env.FREYJA_ORIGIN)
+      .post('/api/sessions')
+      .reply(200, JSON.stringify(FUNNEL_DATA));
+
+    const res = await request(app.server)
+      .get(`${BASE_PATH}/funnel?id=funnelId`)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', `${cookies.tracking.key}=1;`)
+      .expect(200);
+
+    const cookie = (res.get('set-cookie') as unknown as string[]).find((c) =>
+      c.startsWith(cookies.funnel.key),
+    );
+    expect(cookie?.split(';')[0]).toEqual(
+      `${cookies.funnel.key}=${FUNNEL_DATA.session.id}`,
+    );
+  });
+
+  it('should load funnel when cookie is present', async () => {
+    nock(process.env.FREYJA_ORIGIN)
+      .get(`/api/sessions/${FUNNEL_DATA.session.id}`)
+      .reply(200, JSON.stringify(FUNNEL_DATA));
+
+    const res = await request(app.server)
+      .get(`${BASE_PATH}/funnel?id=funnelId`)
+      .set('User-Agent', TEST_UA)
+      .set(
+        'Cookie',
+        `${cookies.tracking.key}=1;${cookies.funnel.key}=${FUNNEL_DATA.session.id};`,
+      )
+      .expect(200);
+    expect(res.body).toEqual(FUNNEL_BOOT_BODY);
+  });
+
+  it('should ignore cookie when the user does not match', async () => {
+    nock(process.env.FREYJA_ORIGIN)
+      .get(`/api/sessions/${FUNNEL_DATA.session.id}`)
+      .reply(200, JSON.stringify(FUNNEL_DATA));
+
+    const clone = structuredClone(FUNNEL_DATA);
+    clone.session.userId = '2';
+    nock(process.env.FREYJA_ORIGIN)
+      .post('/api/sessions')
+      .reply(200, JSON.stringify(clone));
+
+    const res = await request(app.server)
+      .get(`${BASE_PATH}/funnel?id=funnelId`)
+      .set('User-Agent', TEST_UA)
+      .set(
+        'Cookie',
+        `${cookies.tracking.key}=2;${cookies.funnel.key}=${FUNNEL_DATA.session.id};`,
+      )
+      .expect(200);
+    expect(res.body.funnelState.session.userId).toEqual('2');
+  });
+
+  it('should ignore cookie when the funnel does not match', async () => {
+    nock(process.env.FREYJA_ORIGIN)
+      .get(`/api/sessions/${FUNNEL_DATA.session.id}`)
+      .reply(200, JSON.stringify(FUNNEL_DATA));
+
+    nock(process.env.FREYJA_ORIGIN)
+      .post('/api/sessions')
+      .reply(200, JSON.stringify(FUNNEL_DATA));
+
+    const res = await request(app.server)
+      .get(`${BASE_PATH}/funnel?id=funnelId2`)
+      .set('User-Agent', TEST_UA)
+      .set(
+        'Cookie',
+        `${cookies.tracking.key}=1;${cookies.funnel.key}=${FUNNEL_DATA.session.id};`,
+      )
+      .expect(200);
+    expect(res.body).toEqual(FUNNEL_BOOT_BODY);
+  });
+
+  it('should load funnel id from growthbook', async () => {
+    nock(process.env.FREYJA_ORIGIN)
+      .post('/api/sessions', {
+        userId: '1',
+        funnelId: 'gbId',
+      })
+      .reply(200, JSON.stringify(FUNNEL_DATA));
+
+    await request(app.server)
+      .get(`${BASE_PATH}/funnel`)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', `${cookies.tracking.key}=1;`)
+      .expect(200);
+  });
+
+  describe('funnels/:id route', () => {
+    it('should return the funnel data for "onboarding" funnel', async () => {
+      nock(process.env.FREYJA_ORIGIN)
+        .post('/api/sessions', {
+          userId: '1',
+          funnelId: 'gbId',
+        })
+        .reply(200, JSON.stringify(FUNNEL_DATA));
+
+      await request(app.server)
+        .get(`${BASE_PATH}/funnels/onboarding`)
+        .set('User-Agent', TEST_UA)
+        .set('Cookie', `${cookies.tracking.key}=1;`)
+        .expect(200);
+    });
+
+    it('should return 404 for invalid funnel id', async () => {
+      const res = await request(app.server)
+        .get(`${BASE_PATH}/funnels/invalid`)
+        .set('User-Agent', TEST_UA)
+        .set('Cookie', `${cookies.tracking.key}=1;`)
+        .expect(404);
+
+      expect(res.body).toEqual({ error: 'Funnel not found' });
+    });
+
+    it('should set different cookies for legacy funnel and onboarding funnel', async () => {
+      // Mock responses for both funnel types
+      nock(process.env.FREYJA_ORIGIN)
+        .post('/api/sessions')
+        .twice()
+        .reply(200, JSON.stringify(FUNNEL_DATA));
+
+      // Request legacy funnel
+      const legacyRes = await request(app.server)
+        .get(`${BASE_PATH}/funnel?id=funnelId`)
+        .set('User-Agent', TEST_UA)
+        .set('Cookie', `${cookies.tracking.key}=1;`)
+        .expect(200);
+
+      // Request onboarding funnel
+      const onboardingRes = await request(app.server)
+        .get(`${BASE_PATH}/funnels/onboarding`)
+        .set('User-Agent', TEST_UA)
+        .set('Cookie', `${cookies.tracking.key}=1;`)
+        .expect(200);
+
+      // Extract cookies from responses
+      const legacyCookies = setCookieParser.parse(
+        legacyRes.get('set-cookie') as unknown as string[],
+      );
+      const onboardingCookies = setCookieParser.parse(
+        onboardingRes.get('set-cookie') as unknown as string[],
+      );
+
+      // Find the funnel cookies
+      const legacyFunnelCookie = legacyCookies.find(
+        (c) => c.name === cookies.funnel.key,
+      );
+      const onboardingFunnelCookie = onboardingCookies.find(
+        (c) => c.name === cookies.onboarding.key,
+      );
+
+      // Verify both cookies exist
+      expect(legacyFunnelCookie).toBeDefined();
+      expect(onboardingFunnelCookie).toBeDefined();
+
+      // Verify cookies have different names
+      expect(legacyFunnelCookie?.name).not.toEqual(
+        onboardingFunnelCookie?.name,
+      );
+
+      // Verify cookie values
+      expect(legacyFunnelCookie?.value).toEqual(FUNNEL_DATA.session.id);
+      expect(onboardingFunnelCookie?.value).toEqual(FUNNEL_DATA.session.id);
+    });
+  });
+});
+
+describe('boot profile completion', () => {
+  const BASE_PATH = '/boot';
+  const saveProfileCompletionUser = async (
+    user: Partial<User> & Pick<User, 'id' | 'name' | 'username'>,
+  ): Promise<void> => {
+    await con.getRepository(User).save({
+      createdAt: new Date(userCreatedDate),
+      infoConfirmed: true,
+      ...user,
+    });
+  };
+
+  it('should return profileCompletion with 0% for user with no profile data', async () => {
+    await saveProfileCompletionUser({
+      id: 'pc-empty',
+      name: 'Empty Profile',
+      username: 'pc-empty',
+      image: '',
+      bio: null,
+      experienceLevel: null,
+    });
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie('pc-empty'))
+      .expect(200);
+
+    expect(res.body.user.profileCompletion).toEqual({
+      percentage: 0,
+      hasProfileImage: false,
+      hasHeadline: false,
+      hasExperienceLevel: false,
+      hasWork: false,
+      hasEducation: false,
+    });
+  });
+
+  it('should return profileCompletion with 20% for user with only profile image', async () => {
+    await saveProfileCompletionUser({
+      id: 'pc-image',
+      name: 'Image Profile',
+      username: 'pc-image',
+      image: 'https://example.com/image.jpg',
+      bio: null,
+      experienceLevel: null,
+    });
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie('pc-image'))
+      .expect(200);
+
+    expect(res.body.user.profileCompletion).toEqual({
+      percentage: 20,
+      hasProfileImage: true,
+      hasHeadline: false,
+      hasExperienceLevel: false,
+      hasWork: false,
+      hasEducation: false,
+    });
+  });
+
+  it('should return profileCompletion with 60% for user with image, bio, and experience level', async () => {
+    await con.getRepository(User).update(
+      { id: '1' },
+      {
+        image: 'https://example.com/image.jpg',
+        bio: 'Software engineer',
+        experienceLevel: 'MORE_THAN_4_YEARS',
+      },
+    );
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+
+    expect(res.body.user.profileCompletion).toEqual({
+      percentage: 60,
+      hasProfileImage: true,
+      hasHeadline: true,
+      hasExperienceLevel: true,
+      hasWork: false,
+      hasEducation: false,
+    });
+  });
+
+  it('should return profileCompletion with 100% for user with complete profile', async () => {
+    await con.getRepository(User).update(
+      { id: '1' },
+      {
+        image: 'https://example.com/image.jpg',
+        bio: 'Software engineer',
+        experienceLevel: 'MORE_THAN_4_YEARS',
+      },
+    );
+
+    // Add work experience
+    await con.getRepository(UserExperienceWork).save({
+      userId: '1',
+      title: 'Software Engineer',
+      startedAt: new Date('2020-01-01'),
+    });
+
+    // Add education
+    await con.getRepository(UserExperienceEducation).save({
+      userId: '1',
+      title: 'Computer Science',
+      startedAt: new Date('2016-01-01'),
+    });
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+
+    expect(res.body.user.profileCompletion).toEqual({
+      percentage: 100,
+      hasProfileImage: true,
+      hasHeadline: true,
+      hasExperienceLevel: true,
+      hasWork: true,
+      hasEducation: true,
+    });
+  });
+});
+
+describe('engagement creatives', () => {
+  const GENERATION_ID = 'test-generation-id';
+
+  const skadiEngagementPayload = {
+    promoted_name: 'Test Brand',
+    promoted_body: 'Test body',
+    promoted_cta: 'Try now',
+    promoted_url: 'https://example.com',
+    promoted_logo_img: {
+      dark: 'https://example.com/logo-dark.png',
+      light: 'https://example.com/logo-light.png',
+    },
+    promoted_icon_img: {
+      dark: 'https://example.com/icon-dark.png',
+      light: 'https://example.com/icon-light.png',
+    },
+    promoted_gradient_start: { dark: '#FF0000', light: '#CC0000' },
+    promoted_gradient_end: { dark: '#0000FF', light: '#0000CC' },
+    tools: ['tool1', 'tool2'],
+    keywords: ['keyword1', 'keyword2'],
+    tags: ['tag1', 'tag2'],
+  };
+
+  const skadiResponse = {
+    generation_id: GENERATION_ID,
+    value: { engagement: skadiEngagementPayload },
+  };
+
+  const expectedCreative = {
+    ...skadiEngagementPayload,
+    gen_id: GENERATION_ID,
+  };
+
+  afterEach(() => {
+    nock.cleanAll();
+    remoteConfig.vars.engagementAdsEnabled = true;
+  });
+
+  it('should not fetch engagement creatives when remote config is disabled', async () => {
+    remoteConfig.vars.engagementAdsEnabled = false;
+
+    const scope = nock(process.env.SKADI_ORIGIN)
+      .post('/private')
+      .reply(200, skadiResponse);
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+
+    expect(res.body.engagementCreatives).toEqual([]);
+    expect(scope.isDone()).toBe(false);
+  });
+
+  it('should return engagement creatives for logged in user', async () => {
+    nock(process.env.SKADI_ORIGIN)
+      .post('/private', {
+        placement: 'default_engagement',
+        metadata: { USERID: '1' },
+      })
+      .reply(200, skadiResponse);
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+
+    expect(res.body.engagementCreatives).toEqual([expectedCreative]);
+  });
+
+  it('should return engagement creatives for anonymous user', async () => {
+    nock(process.env.SKADI_ORIGIN).post('/private').reply(200, skadiResponse);
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .expect(200);
+
+    expect(res.body.engagementCreatives).toEqual([expectedCreative]);
+  });
+
+  it('should return empty array when skadi returns no generation_id', async () => {
+    nock(process.env.SKADI_ORIGIN)
+      .post('/private')
+      .reply(200, { value: { engagement: skadiEngagementPayload } });
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+
+    expect(res.body.engagementCreatives).toEqual([]);
+  });
+
+  it('should return empty array when skadi returns empty response', async () => {
+    nock(process.env.SKADI_ORIGIN).post('/private').reply(200, {});
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+
+    expect(res.body.engagementCreatives).toEqual([]);
+  });
+
+  it('should return empty array when skadi returns error', async () => {
+    nock(process.env.SKADI_ORIGIN)
+      .post('/private')
+      .reply(500, 'Internal Server Error');
+
+    const res = await request(app.server)
+      .get(BASE_PATH)
+      .set('User-Agent', TEST_UA)
+      .set('Cookie', await mockLoggedInCookie())
+      .expect(200);
+
+    expect(res.body.engagementCreatives).toEqual([]);
+  });
+});

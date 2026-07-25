@@ -1,0 +1,174 @@
+import React from 'react';
+import type { RenderResult } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import { QueryClient } from '@tanstack/react-query';
+import { GrowthBook } from '@growthbook/growthbook-react';
+import type { NextRouter } from 'next/router';
+import { useRouter } from 'next/router';
+import { sharePost } from '../../../../__tests__/fixture/post';
+import type { PostCardProps } from '../common/common';
+import { PostType } from '../../../graphql/posts';
+import { TestBootProvider } from '../../../../__tests__/helpers/boot';
+import { ShareGrid } from './ShareGrid';
+
+jest.mock('next/router', () => ({
+  useRouter: jest.fn(),
+}));
+
+const post = sharePost;
+const { sharedPost } = post;
+
+if (!sharedPost) {
+  throw new Error('Expected sharedPost fixture for ShareGrid tests');
+}
+
+const defaultProps: PostCardProps = {
+  post,
+  onPostClick: jest.fn(),
+  onUpvoteClick: jest.fn(),
+  onCommentClick: jest.fn(),
+  onBookmarkClick: jest.fn(),
+  onShare: jest.fn(),
+  onCopyLinkClick: jest.fn(),
+  onReadArticleClick: jest.fn(),
+};
+
+jest.mock('../../../hooks', () => {
+  const originalModule = jest.requireActual('../../../hooks');
+  return {
+    __esModule: true,
+    ...originalModule,
+    useBookmarkProvider: (): { highlightBookmarkedPost: boolean } => ({
+      highlightBookmarkedPost: false,
+    }),
+  };
+});
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  jest.mocked(useRouter).mockImplementation(
+    () =>
+      ({
+        pathname: '/',
+      } as unknown as NextRouter),
+  );
+});
+
+const getGrowthBook = (isSharedPostPreviewEnabled = false): GrowthBook => {
+  const gb = new GrowthBook();
+  gb.setFeatures({
+    shared_post_preview: {
+      defaultValue: isSharedPostPreviewEnabled,
+    },
+  });
+
+  return gb;
+};
+
+const renderComponent = (
+  props: Partial<PostCardProps> = {},
+  isSharedPostPreviewEnabled = false,
+): RenderResult => {
+  return render(
+    <TestBootProvider
+      client={new QueryClient()}
+      gb={getGrowthBook(isSharedPostPreviewEnabled)}
+    >
+      <ShareGrid {...defaultProps} {...props} />
+    </TestBootProvider>,
+  );
+};
+
+const videoPostTypeComponentProps: Partial<PostCardProps> = {
+  post: {
+    ...defaultProps.post,
+    sharedPost: {
+      ...sharedPost,
+      type: PostType.VideoYouTube,
+    },
+  },
+};
+
+it('should call on link click on component left click', async () => {
+  renderComponent();
+  const el = await screen.findByTitle('Good read about react-query');
+  el.click();
+  await waitFor(() => expect(defaultProps.onPostClick).toBeCalled());
+});
+
+it('should call on upvote click on upvote button click', async () => {
+  renderComponent();
+  const el = await screen.findByLabelText('More like this');
+  el.click();
+  await waitFor(() => expect(defaultProps.onUpvoteClick).toBeCalledWith(post));
+});
+
+it('should call on comment click on comment button click', async () => {
+  renderComponent();
+  const el = await screen.findByLabelText('Comments');
+  el.click();
+  await waitFor(() => expect(defaultProps.onCommentClick).toBeCalledWith(post));
+});
+
+it('should call on share click on copy link button click', async () => {
+  renderComponent({});
+  const el = await screen.findByLabelText('Copy link');
+  el.click();
+  await waitFor(() => expect(defaultProps.onCopyLinkClick).toBeCalled());
+});
+
+it('should not display publication date createdAt is empty', async () => {
+  renderComponent({
+    ...defaultProps,
+    post: { ...post, createdAt: undefined },
+  });
+  const el = screen.queryByText('Jun 13, 2018');
+  expect(el).not.toBeInTheDocument();
+});
+
+it('should format publication date', async () => {
+  renderComponent();
+  const el = await screen.findByText('Feb 09, 2023');
+  expect(el).toBeInTheDocument();
+});
+
+it('should hide read time when not available', async () => {
+  const sharedPostWithoutReadTime = { ...sharedPost };
+  delete sharedPostWithoutReadTime.readTime;
+  renderComponent({
+    post: {
+      ...post,
+      sharedPost: sharedPostWithoutReadTime,
+    },
+  });
+  expect(screen.queryByTestId('readTime')).not.toBeInTheDocument();
+});
+
+it('should show options button on hover when in laptop size', async () => {
+  renderComponent();
+  const header = await screen.findByLabelText('Options');
+  expect(header).toHaveClass('inline-flex');
+  // eslint-disable-next-line testing-library/no-node-access
+  expect(header.closest('span')).toHaveClass(
+    'laptop:mouse:invisible laptop:mouse:group-hover:visible',
+  );
+});
+
+it('should render shared post preview details', async () => {
+  renderComponent({}, true);
+  expect(await screen.findByTestId('shared-post-preview')).toBeInTheDocument();
+  expect(screen.getByText('TkDodo')).toBeInTheDocument();
+  expect(screen.getByText('Type-safe React Query')).toBeInTheDocument();
+});
+
+it('should keep shared post preview for video:youtube type when feature enabled', async () => {
+  renderComponent(videoPostTypeComponentProps, true);
+  expect(await screen.findByTestId('shared-post-preview')).toBeInTheDocument();
+  expect(screen.queryByTestId('playIconVideoPost')).not.toBeInTheDocument();
+});
+
+it('should keep legacy image footer for video:youtube type when feature disabled', async () => {
+  renderComponent(videoPostTypeComponentProps);
+  expect(await screen.findByTestId('playIconVideoPost')).toBeInTheDocument();
+  expect(screen.queryByTestId('shared-post-preview')).not.toBeInTheDocument();
+});

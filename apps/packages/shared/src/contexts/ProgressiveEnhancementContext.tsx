@@ -1,0 +1,55 @@
+import type { ReactElement, ReactNode } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { requestIdleCallback } from 'next/dist/client/request-idle-callback';
+
+export interface ProgressiveEnhancementContextData {
+  windowLoaded: boolean;
+  asyncImageSupport: boolean;
+  nativeShareSupport: boolean;
+}
+
+const ProgressiveEnhancementContext =
+  React.createContext<ProgressiveEnhancementContextData>({
+    windowLoaded: false,
+    asyncImageSupport: false,
+    nativeShareSupport: false,
+  });
+export default ProgressiveEnhancementContext;
+
+export type ProgressiveEnhancementContextProviderProps = {
+  children?: ReactNode;
+};
+
+export const ProgressiveEnhancementContextProvider = ({
+  children,
+}: ProgressiveEnhancementContextProviderProps): ReactElement => {
+  const [windowLoaded, setWindowLoaded] = useState(false);
+  const [nativeShareSupport, setNativeShareSupport] = useState(false);
+  const [asyncImageSupport] = useState(false);
+  const contextData = useMemo<ProgressiveEnhancementContextData>(
+    () => ({ windowLoaded, asyncImageSupport, nativeShareSupport }),
+    // @NOTE see https://shikkhahub.atlassian.net/l/cp/dK9h1zoM
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [windowLoaded, asyncImageSupport],
+  );
+
+  useEffect(() => {
+    const callback = () => {
+      setWindowLoaded(true);
+      setNativeShareSupport('share' in globalThis?.navigator);
+    };
+
+    if ('windowLoaded' in window) {
+      requestIdleCallback(callback);
+    }
+    window.addEventListener('load', callback, {
+      once: true,
+    });
+  }, []);
+
+  return (
+    <ProgressiveEnhancementContext.Provider value={contextData}>
+      {children}
+    </ProgressiveEnhancementContext.Provider>
+  );
+};

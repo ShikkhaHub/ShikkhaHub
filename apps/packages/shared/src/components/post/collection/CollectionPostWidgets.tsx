@@ -1,0 +1,46 @@
+import type { ReactElement } from 'react';
+import React from 'react';
+import { PageWidgets } from '../../utilities';
+import { ShareMobile } from '../../ShareMobile';
+import ShareBar from '../../ShareBar';
+import { CollectionsIntro } from '../widgets';
+import { RelatedPostsWidget } from '../RelatedPostsWidget';
+import { PostRelationType } from '../../../graphql/posts';
+import type { PostWidgetsProps } from '../PostWidgets';
+import { FooterLinks } from '../../footer';
+import { PostSidebarAdWidget } from '../PostSidebarAdWidget';
+import { FeaturedArchives } from '../../widgets/FeaturedArchives';
+import { PostSignupWidget } from '../PostSignupWidget';
+import { HighlightPostSidebarWidget } from '../../cards/highlight/HighlightPostSidebarWidget';
+
+export const CollectionPostWidgets = ({
+  onCopyPostLink,
+  post,
+  origin,
+  className,
+}: PostWidgetsProps): ReactElement => {
+  return (
+    <PageWidgets className={className}>
+      <PostSignupWidget />
+      <CollectionsIntro className="hidden laptop:flex" />
+      <RelatedPostsWidget
+        post={post}
+        relationType={PostRelationType.Collection}
+      />
+      <PostSidebarAdWidget
+        postId={post.id}
+        className={{ container: 'w-full bg-transparent' }}
+      />
+      <ShareBar post={post} />
+      <ShareMobile
+        post={post}
+        origin={origin}
+        onCopyPostLink={onCopyPostLink}
+        link={post.commentsPermalink}
+      />
+      <HighlightPostSidebarWidget />
+      <FeaturedArchives postId={post.id} />
+      <FooterLinks />
+    </PageWidgets>
+  );
+};

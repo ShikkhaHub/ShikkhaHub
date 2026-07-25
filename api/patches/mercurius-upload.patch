@@ -1,0 +1,26 @@
+diff --git a/dist/index.js b/dist/index.js
+index 702d96f368943c6030dd1f801b66efb47ac7553a..cda84ed0d6e30555e314b897459c763b0a156cbc 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -30,10 +30,10 @@ exports.mercuriusUpload = void 0;
+ const util = __importStar(require("util"));
+ const stream_1 = __importDefault(require("stream"));
+ const fastify_plugin_1 = __importDefault(require("fastify-plugin"));
+-const graphql_upload_minimal_1 = require("graphql-upload-minimal");
++const graphql_upload_minimal_1_processRequest = require("graphql-upload/processRequest.js");
+ const finishedStream = util.promisify(stream_1.default.finished);
+ const mercuriusGQLUpload = (fastify, options, done) => {
+-    fastify.addContentTypeParser('multipart', (req, _payload, done) => {
++    fastify.addContentTypeParser('multipart/form-data', (req, _payload, done) => {
+         req.mercuriusUploadMultipart = true;
+         done(null);
+     });
+@@ -41,7 +41,7 @@ const mercuriusGQLUpload = (fastify, options, done) => {
+         if (!request.mercuriusUploadMultipart) {
+             return;
+         }
+-        request.body = await (0, graphql_upload_minimal_1.processRequest)(request.raw, reply.raw, options);
++        request.body = await (0, graphql_upload_minimal_1_processRequest)(request.raw, reply.raw, options);
+     });
+     fastify.addHook('onSend', async function (request) {
+         if (!request.mercuriusUploadMultipart) {

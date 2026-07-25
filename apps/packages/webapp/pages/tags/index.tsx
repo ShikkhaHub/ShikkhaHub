@@ -1,0 +1,224 @@
+import type { ReactElement } from 'react';
+import React, { useMemo } from 'react';
+import type { GetStaticPropsResult } from 'next';
+import Head from 'next/head';
+import type { NextSeoProps } from 'next-seo/lib/types';
+import type { Keyword } from '@shikkhahub/shared/src/graphql/keywords';
+import { TAG_DIRECTORY_QUERY } from '@shikkhahub/shared/src/graphql/keywords';
+import { TagLink } from '@shikkhahub/shared/src/components/TagLinks';
+import { HashtagIcon } from '@shikkhahub/shared/src/components/icons';
+import { IconSize } from '@shikkhahub/shared/src/components/Icon';
+import { ApiError, gqlClient } from '@shikkhahub/shared/src/graphql/common';
+import { useRouter } from 'next/router';
+import { BreadCrumbs } from '@shikkhahub/shared/src/components/header/BreadCrumbs';
+import type { GraphQLError } from '@shikkhahub/shared/src/lib/errors';
+import { PageWrapperLayout } from '@shikkhahub/shared/src/components/layout/PageWrapperLayout';
+import { TagTopList } from '@shikkhahub/shared/src/components/cards/Leaderboard';
+import useFeedSettings from '@shikkhahub/shared/src/hooks/useFeedSettings';
+import { ButtonSize } from '@shikkhahub/shared/src/components/buttons/common';
+import { getLayout as getFooterNavBarLayout } from '../../components/layouts/FooterNavBarLayout';
+import { getLayout } from '../../components/layouts/MainLayout';
+import { defaultOpenGraph } from '../../next-seo';
+import { getPageSeoTitles } from '../../components/layouts/utils';
+
+const seoTitles = getPageSeoTitles('Explore trending tags for developers');
+const seo: NextSeoProps = {
+  title: seoTitles.title,
+  openGraph: { ...seoTitles.openGraph, ...defaultOpenGraph },
+  description:
+    'Discover trending, popular, and new tags on daily.dev. Browse topics that matter to developers and find relevant content quickly.',
+};
+
+interface TagsPageProps {
+  tags: Keyword[];
+  trendingTags: Keyword[];
+  popularTags: Keyword[];
+}
+
+const getTagsSchemas = (tags: Keyword[]): string =>
+  JSON.stringify({
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'CollectionPage',
+        '@id': 'https://app.daily.dev/tags#collection',
+        url: 'https://app.daily.dev/tags',
+        name: 'Explore trending tags for developers',
+        description: 'Discover trending, popular, and new tags on daily.dev.',
+      },
+      {
+        '@type': 'ItemList',
+        '@id': 'https://app.daily.dev/tags#items',
+        itemListElement: tags.map((tag, index) => ({
+          '@type': 'ListItem',
+          position: index + 1,
+          item: {
+            '@type': 'Thing',
+            name: tag.value,
+            url: `https://app.daily.dev/tags/${encodeURIComponent(tag.value)}`,
+          },
+        })),
+      },
+    ],
+  });
+
+const TagsPage = ({
+  tags,
+  trendingTags,
+  popularTags,
+}: TagsPageProps): ReactElement => {
+  const { isFallback: isLoading } = useRouter();
+
+  const { feedSettings } = useFeedSettings();
+  const selectedTags = feedSettings?.includeTags || [];
+
+  const recentlyAddedTags = useMemo(() => {
+    return tags
+      ?.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
+      .slice(0, 10);
+  }, [tags]);
+
+  const tagsByFirstLetter = useMemo(() => {
+    const filteredTags = tags?.reduce((acc, cur) => {
+      const rawLetter = cur.value[0].toLowerCase();
+      const firstLetter: string = new RegExp(/^[a-zA-Z]+$/).test(rawLetter)
+        ? rawLetter
+        : '#';
+      acc[firstLetter] = (acc[firstLetter] || []).concat([cur]);
+      return acc;
+    }, []);
+
+    if (!filteredTags) {
+      return null;
+    }
+
+    return Object.keys(filteredTags)
+      .sort()
+      .reduce((acc, cur) => {
+        acc[cur] = filteredTags[cur].sort((a: Keyword, b: Keyword) => {
+          if (a.value < b.value) {
+            return -1;
+          }
+
+          if (a.value > b.value) {
+            return 1;
+          }
+
+          return 0;
+        });
+        return acc;
+      }, []);
+  }, [tags]);
+
+  if (isLoading) {
+    return <></>;
+  }
+
+  const topTagsForSchema = tags.slice(0, 50);
+
+  return (
+    <PageWrapperLayout className="flex flex-col gap-4">
+      <Head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: getTagsSchemas(topTagsForSchema),
+          }}
+        />
+      </Head>
+      <BreadCrumbs className="mb-2">
+        <HashtagIcon size={IconSize.XSmall} secondary /> Tags
+      </BreadCrumbs>
+      <div className="grid auto-rows-fr grid-cols-1 gap-0 tablet:grid-cols-2 tablet:gap-6 laptopL:grid-cols-3">
+        <TagTopList
+          containerProps={{ title: 'Trending tags' }}
+          items={trendingTags}
+          isLoading={isLoading}
+        />
+        <TagTopList
+          containerProps={{ title: 'Popular tags' }}
+          items={popularTags}
+          isLoading={isLoading}
+        />
+        <TagTopList
+          containerProps={{
+            title: 'Recently added tags',
+            className: 'col-span-1 tablet:col-span-2 laptopL:col-span-1',
+          }}
+          items={recentlyAddedTags}
+          isLoading={isLoading}
+        />
+      </div>
+      <div className="flex h-10 items-center justify-between px-4 tablet:px-0">
+        <p className="font-bold typo-body">All tags</p>
+      </div>
+      <div className="columns-[17rem] px-4 tablet:px-0">
+        {tagsByFirstLetter &&
+          Object.entries(tagsByFirstLetter).map(([letter, value]) => {
+            return (
+              <div
+                key={letter}
+                className="mt-3 flex flex-col items-baseline gap-3 px-4 first:mt-0"
+              >
+                <p className="flex h-8 items-center font-bold text-text-tertiary typo-callout">
+                  {letter}
+                </p>
+                {value.map((tag) => (
+                  <TagLink
+                    key={tag.value}
+                    tag={tag.value}
+                    className="!line-clamp-2 !h-auto py-1.5"
+                    isSelected={selectedTags.includes(tag.value)}
+                    buttonProps={{ size: ButtonSize.Small }}
+                  />
+                ))}
+              </div>
+            );
+          })}
+      </div>
+    </PageWrapperLayout>
+  );
+};
+
+const getTagsPageLayout: typeof getLayout = (...props) =>
+  getFooterNavBarLayout(getLayout(...props));
+
+TagsPage.getLayout = getTagsPageLayout;
+TagsPage.layoutProps = {
+  screenCentered: false,
+  seo,
+};
+export default TagsPage;
+
+export async function getStaticProps(): Promise<
+  GetStaticPropsResult<TagsPageProps>
+> {
+  try {
+    const res = await gqlClient.request<TagsPageProps>(TAG_DIRECTORY_QUERY);
+    return {
+      props: {
+        tags: res.tags,
+        trendingTags: res.trendingTags,
+        popularTags: res.popularTags,
+      },
+      revalidate: 60,
+    };
+  } catch (err) {
+    const error = err as GraphQLError;
+    if (
+      [ApiError.NotFound, ApiError.Forbidden].includes(
+        error?.response?.errors?.[0]?.extensions?.code,
+      )
+    ) {
+      return {
+        props: {
+          tags: [],
+          trendingTags: [],
+          popularTags: [],
+        },
+        revalidate: 60,
+      };
+    }
+    throw err;
+  }
+}

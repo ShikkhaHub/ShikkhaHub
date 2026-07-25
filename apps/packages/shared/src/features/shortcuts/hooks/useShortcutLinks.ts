@@ -1,0 +1,136 @@
+import type { FormEvent, MutableRefObject } from 'react';
+import { useEffect, useRef } from 'react';
+import { useSettingsContext } from '../../../contexts/SettingsContext';
+import { useLogContext } from '../../../contexts/LogContext';
+import { LogEvent, ShortcutsSourceType, TargetType } from '../../../lib/log';
+import { useShortcutsUser } from './useShortcutsUser';
+import { useShortcuts } from '../contexts/ShortcutsProvider';
+
+export interface UseShortcutLinks {
+  formRef: MutableRefObject<HTMLFormElement | undefined>;
+  onSaveChanges: (
+    e: FormEvent,
+  ) => Promise<{ errors: Record<string, string> | null }>;
+  askTopSitesBrowserPermission: () => Promise<boolean>;
+  hasCheckedPermission?: boolean;
+  isTopSiteActive?: boolean | null;
+  hasTopSites?: boolean | null;
+  isManual?: boolean;
+  shortcutLinks?: string[];
+  formLinks: string[];
+  customLinks?: string[];
+  hideShortcuts: boolean;
+  showGetStarted: boolean;
+}
+
+export function useShortcutLinks(): UseShortcutLinks {
+  const { logEvent } = useLogContext();
+  const formRef = useRef<HTMLFormElement>();
+
+  const { isManual, topSites, hasCheckedPermission, askTopSitesPermission } =
+    useShortcuts();
+
+  const { customLinks, updateCustomLinks, showTopSites } = useSettingsContext();
+
+  const hasTopSites = topSites === undefined ? null : topSites?.length > 0;
+  const hasCustomLinks = (customLinks?.length ?? 0) > 0;
+  const isTopSiteActive =
+    hasCheckedPermission && !hasCustomLinks && hasTopSites;
+  // Legacy surface caps at 8 tiles. The upstream hook now hands back up to
+  // `MAX_SHORTCUTS` (12) so the new hub's auto mode can render the full
+  // row, so we slice here to keep the legacy row's visual width stable
+  // for flag-off users.
+  const sites = topSites?.slice(0, 8).map((site) => site.url);
+  const shortcutLinks = isTopSiteActive ? sites : customLinks;
+  const formLinks = (isManual ? customLinks : sites) || [];
+
+  const { isOldUser, showToggleShortcuts, hasCompletedFirstSession } =
+    useShortcutsUser();
+  const hasNoShortcuts = !shortcutLinks?.length && showTopSites;
+  const showGetStarted =
+    !isOldUser && hasNoShortcuts && !hasCompletedFirstSession;
+
+  const getFormInputs = () => {
+    if (!formRef.current) {
+      return [] as HTMLInputElement[];
+    }
+    return Array.from(formRef.current.elements).filter(
+      (el) => el.getAttribute('name') === 'shortcutLink',
+    ) as HTMLInputElement[];
+  };
+
+  const onSaveChanges = async (e: FormEvent) => {
+    e.preventDefault();
+
+    if (!isManual) {
+      updateCustomLinks([]);
+      return { errors: null };
+    }
+
+    if (!formRef.current) {
+      return { errors: { message: 'Form not available' } };
+    }
+
+    const isValid = formRef.current.checkValidity();
+
+    if (!isValid) {
+      return { errors: { message: 'Some of the links are not valid!' } };
+    }
+
+    const links = getFormInputs()
+      .map((el) => el.value.trim())
+      .filter((link) => !!link);
+
+    updateCustomLinks(links);
+
+    logEvent({
+      event_name: LogEvent.SaveShortcutAccess,
+      target_type: TargetType.Shortcuts,
+      extra: JSON.stringify({ source: ShortcutsSourceType.Custom }),
+    });
+
+    return { errors: null };
+  };
+
+  useEffect(() => {
+    if (!formRef?.current) {
+      return;
+    }
+
+    const elements = getFormInputs();
+
+    elements.forEach((input: HTMLInputElement, i) => {
+      // eslint-disable-next-line no-param-reassign
+      input.value = formLinks?.[i]?.trim() || '';
+    });
+    // @NOTE see https://shikkhahub.atlassian.net/l/cp/dK9h1zoM
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isManual, hasCustomLinks]);
+
+  return {
+    formRef,
+    isManual,
+    formLinks,
+    shortcutLinks,
+    hasTopSites,
+    isTopSiteActive,
+    hasCheckedPermission,
+    customLinks,
+    showGetStarted,
+    hideShortcuts: showToggleShortcuts,
+    onSaveChanges,
+    askTopSitesBrowserPermission: async () => {
+      const granted = await askTopSitesPermission();
+
+      if (granted) {
+        logEvent({
+          event_name: LogEvent.SaveShortcutAccess,
+          target_type: TargetType.Shortcuts,
+          extra: JSON.stringify({ source: ShortcutsSourceType.Browser }),
+        });
+      }
+
+      return granted;
+    },
+  };
+}

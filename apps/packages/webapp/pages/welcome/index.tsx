@@ -1,0 +1,169 @@
+import type { ReactElement } from 'react';
+import React, { useEffect, useState } from 'react';
+import type { FeedProps } from '@shikkhahub/shared/src/components/Feed';
+import Feed from '@shikkhahub/shared/src/components/Feed';
+import {
+  ANONYMOUS_FEED_QUERY,
+  RankingAlgorithm,
+} from '@shikkhahub/shared/src/graphql/feed';
+import {
+  OtherFeedPage,
+  StaleTime,
+  generateQueryKey,
+} from '@shikkhahub/shared/src/lib/query';
+import { useAuthContext } from '@shikkhahub/shared/src/contexts/AuthContext';
+import {
+  ViewSize,
+  useConditionalFeature,
+  useEventListener,
+  useScrollRestoration,
+  useViewSize,
+} from '@shikkhahub/shared/src/hooks';
+import { useRouter } from 'next/router';
+import {
+  isDevelopment,
+  onboardingUrl,
+  webappUrl,
+} from '@shikkhahub/shared/src/lib/constants';
+import Logo, { LogoPosition } from '@shikkhahub/shared/src/components/Logo';
+import {
+  Button,
+  ButtonSize,
+  ButtonVariant,
+} from '@shikkhahub/shared/src/components/buttons/Button';
+import { AuthTriggers } from '@shikkhahub/shared/src/lib/auth';
+import { cloudinaryWelcomePageHeaderMainImage } from '@shikkhahub/shared/src/lib/image';
+import classNames from 'classnames';
+import type { NextSeoProps } from 'next-seo';
+import { useQueryClient } from '@tanstack/react-query';
+import { getPathnameWithQuery } from '@shikkhahub/shared/src/lib';
+import { useFeaturesReadyContext } from '@shikkhahub/shared/src/components/GrowthBookProvider';
+import { feature } from '@shikkhahub/shared/src/lib/featureManagement';
+import { authGradientBg } from '@shikkhahub/shared/src/components/marketing/banners';
+import { getLayout as getFooterNavBarLayout } from '../../components/layouts/FooterNavBarLayout';
+import { getLayout } from '../../components/layouts/FeedLayout';
+import { defaultOpenGraph, defaultSeo, defaultSeoTitle } from '../../next-seo';
+
+const seo: NextSeoProps = {
+  title: defaultSeoTitle,
+  openGraph: { ...defaultOpenGraph },
+  ...defaultSeo,
+  nofollow: true,
+  noindex: true,
+};
+
+const DemoPage = (): ReactElement => {
+  useScrollRestoration();
+  const router = useRouter();
+  const { user, showLogin, isAuthReady, isLoggedIn } = useAuthContext();
+  const isLaptop = useViewSize(ViewSize.Laptop);
+  const queryClient = useQueryClient();
+  const { ready: featuresReady } = useFeaturesReadyContext();
+  const { value: feedVersion } = useConditionalFeature({
+    feature: feature.feedVersion,
+    shouldEvaluate: featuresReady,
+  });
+
+  const feedProps: FeedProps<{
+    version: number;
+    ranking: RankingAlgorithm;
+  }> = {
+    feedName: OtherFeedPage.Welcome,
+    feedQueryKey: generateQueryKey(OtherFeedPage.Welcome, user),
+    query: ANONYMOUS_FEED_QUERY,
+    pageSize: 10,
+    allowFetchMore: false,
+    disableAds: true,
+    showSearch: false,
+    options: {
+      staleTime: StaleTime.Default,
+    },
+    variables: {
+      version: isDevelopment ? 1 : feedVersion,
+      ranking: RankingAlgorithm.Popularity,
+    },
+  };
+
+  useEffect(() => {
+    if (isLaptop) {
+      router.replace(
+        getPathnameWithQuery(onboardingUrl, window.location.search),
+      );
+    }
+  }, [isLaptop, router]);
+
+  useEffect(() => {
+    if (isAuthReady && isLoggedIn) {
+      router.replace(getPathnameWithQuery(webappUrl, window.location.search));
+    }
+  }, [isAuthReady, isLoggedIn, router]);
+
+  const [didScroll, setDidScroll] = useState(false);
+  useEventListener(globalThis as unknown as Window, 'scroll', () => {
+    setDidScroll(window.scrollY > 100);
+  });
+  const hasData = !!queryClient.getQueryData(feedProps.feedQueryKey);
+  const showSignupFooter = didScroll || hasData;
+
+  return (
+    <>
+      <div
+        className={classNames(
+          'sticky top-0 z-header flex h-12 w-full justify-between border-b border-accent-cabbage-default px-4 py-2',
+          authGradientBg,
+        )}
+      >
+        <Logo position={LogoPosition.Relative} />
+        <Button
+          onClick={() => showLogin({ trigger: AuthTriggers.WelcomePage })}
+          variant={ButtonVariant.Primary}
+          size={ButtonSize.Small}
+        >
+          Sign up
+        </Button>
+      </div>
+      <div
+        style={{
+          backgroundImage: `url(${cloudinaryWelcomePageHeaderMainImage})`,
+          backgroundPosition: 'center',
+          backgroundSize: 'cover',
+        }}
+        className="mb-6 flex h-80 flex-col items-center justify-center gap-2 p-6"
+      >
+        <h2 className="text-center font-bold text-text-primary typo-title1">
+          Where developers suffer together
+        </h2>
+        <p className="text-center text-text-secondary typo-body">
+          Personalized news feed, dev communities and search.much better than
+          what&apos;s out there.
+        </p>
+      </div>
+      {featuresReady && <Feed className={feedProps.className} {...feedProps} />}
+      {showSignupFooter && (
+        <div className="mb-6 flex h-80 flex-col items-center justify-center gap-6 p-6">
+          <h2 className="text-center font-bold text-text-primary typo-title1">
+            Where developers suffer together
+          </h2>
+          <Button
+            onClick={() => showLogin({ trigger: AuthTriggers.WelcomePage })}
+            variant={ButtonVariant.Primary}
+            size={ButtonSize.Medium}
+          >
+            Sign up to continue ➔
+          </Button>
+        </div>
+      )}
+    </>
+  );
+};
+
+const getPageLayout: typeof getLayout = (...props) =>
+  getFooterNavBarLayout(getLayout(...props));
+
+DemoPage.getLayout = getPageLayout;
+DemoPage.layoutProps = {
+  screenCentered: false,
+  seo,
+};
+
+export default DemoPage;

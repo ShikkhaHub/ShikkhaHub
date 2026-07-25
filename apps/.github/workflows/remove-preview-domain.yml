@@ -1,0 +1,35 @@
+name: Unassign preview-domain
+on:
+  # Trigger when a pull request is closed
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  unassign-preview-domain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare domain
+        id: prepare
+        uses: actions/github-script@v7.0.1
+        with:
+          script: |
+            const subdomain = `${{ github.head_ref }}`
+              .toLowerCase()
+              .slice(0, 32)
+              .replace(/[^a-z0-9-]/g, '-')
+              .replace(/^-+|-+$/g, '')
+              .replace(/-{2,}/g, '-')
+
+            const domain = `${subdomain}.${{ vars.PREVIEW_DOMAIN }}`
+              .toLowerCase()
+              .replaceAll("_","-")
+            core.setOutput('domain', domain)
+
+      - name: Unssign preview-domain
+        run: |
+          curl -sX DELETE "https://vercel.com/api/v10/projects/${{ secrets.VERCEL_PROJECT_ID }}/domains/${{ steps.prepare.outputs.domain }}?teamId=${{ secrets.VERCEL_TEAM_ID }}" \
+            -H "Authorization: Bearer ${{ secrets.VERCEL_BEARER_TOKEN }}" \
+            -H "Content-Type: application/json"

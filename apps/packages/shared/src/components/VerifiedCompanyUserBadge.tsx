@@ -1,0 +1,80 @@
+import type { ReactElement } from 'react';
+import React from 'react';
+import type { PublicProfile } from '../lib/user';
+import { ProfileImageSize, ProfilePicture } from './ProfilePicture';
+import { useUserCompaniesQuery } from '../hooks/userCompany';
+import {
+  Typography,
+  TypographyColor,
+  TypographyType,
+} from './typography/Typography';
+import { Tooltip } from './tooltip/Tooltip';
+
+export type VerifiedCompanyUserBadgeProps = {
+  user: Pick<PublicProfile, 'companies'>;
+  size?: ProfileImageSize;
+  showCompanyName?: boolean;
+  showVerified?: boolean;
+  companyNameTypography?: {
+    type: TypographyType;
+    color?: TypographyColor;
+  };
+};
+
+export const VerifiedCompanyUserBadge = ({
+  user,
+  size = ProfileImageSize.Size16,
+  showCompanyName,
+  showVerified,
+  companyNameTypography,
+}: VerifiedCompanyUserBadgeProps): ReactElement | null => {
+  const { isVerified } = useUserCompaniesQuery();
+  const { companies } = user;
+
+  if (!companies || companies.length === 0) {
+    return null;
+  }
+
+  return (
+    <Tooltip
+      content={[
+        `Verified as a ${companies[0].name} employee.`,
+        ...(isVerified
+          ? []
+          : // eslint-disable-next-line react/jsx-key
+            [<br />, 'Get your company badge via account settings.']),
+      ]}
+      side="bottom"
+      className="text-center"
+    >
+      <div className="flex min-w-0 items-center justify-center gap-1">
+        <ProfilePicture
+          size={size}
+          className="border border-border-subtlest-secondary"
+          user={{
+            image: companies[0].image,
+            id: companies[0].name,
+          }}
+          rounded="full"
+        />
+        {showCompanyName && (
+          <Typography
+            type={companyNameTypography?.type ?? TypographyType.Footnote}
+            color={companyNameTypography?.color || TypographyColor.Secondary}
+            truncate
+          >
+            {companies[0].name}
+          </Typography>
+        )}
+        {showVerified && (
+          <Typography
+            type={TypographyType.Caption2}
+            color={TypographyColor.Quaternary}
+          >
+            Verified
+          </Typography>
+        )}
+      </div>
+    </Tooltip>
+  );
+};

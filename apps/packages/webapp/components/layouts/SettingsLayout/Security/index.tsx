@@ -1,0 +1,250 @@
+import React from 'react';
+import type { FormEvent, MutableRefObject, ReactElement } from 'react';
+import { providerMap } from '@shikkhahub/shared/src/components/auth/common';
+import {
+  Button,
+  ButtonColor,
+  ButtonSize,
+  ButtonVariant,
+} from '@shikkhahub/shared/src/components/buttons/Button';
+import { LockIcon, MailIcon } from '@shikkhahub/shared/src/components/icons';
+import AccountDangerZone from '@shikkhahub/shared/src/components/profile/AccountDangerZone';
+import { useAuthContext } from '@shikkhahub/shared/src/contexts/AuthContext';
+import { PasswordField } from '@shikkhahub/shared/src/components/fields/PasswordField';
+import { formToJson } from '@shikkhahub/shared/src/lib/form';
+import type { PromptOptions } from '@shikkhahub/shared/src/hooks/usePrompt';
+import { usePrompt } from '@shikkhahub/shared/src/hooks/usePrompt';
+import { useSignBack } from '@shikkhahub/shared/src/hooks/auth/useSignBack';
+import { useToastNotification } from '@shikkhahub/shared/src/hooks';
+import { capitalize } from '@shikkhahub/shared/src/lib/strings';
+import { BOOT_LOCAL_KEY } from '@shikkhahub/shared/src/contexts/common';
+import { DEFAULT_ERROR } from '@shikkhahub/shared/src/graphql/common';
+import { Tooltip } from '@shikkhahub/shared/src/components/tooltip/Tooltip';
+import { useMutation } from '@tanstack/react-query';
+import AccountContentSection from '../AccountContentSection';
+import { AccountPageContainer } from '../AccountPageContainer';
+import type { ManageSocialProvidersProps } from '../common';
+import { AccountSecurityDisplay as Display, AccountTextField } from '../common';
+import AccountLoginSection from './AccountLoginSection';
+
+const providers = Object.values(providerMap);
+
+export interface ChangePasswordParams {
+  password: string;
+}
+
+export interface UpdateProvidersParams {
+  link?: string;
+  unlink?: string;
+}
+
+const removeProviderList = Object.values({
+  ...providerMap,
+  google: {
+    ...providerMap.google,
+    icon: {
+      ...providerMap.google.icon,
+      props: {
+        ...providerMap.google.icon.props,
+        secondary: false,
+      },
+    },
+  },
+  facebook: {
+    ...providerMap.facebook,
+    icon: {
+      ...providerMap.facebook.icon,
+      props: {
+        ...providerMap.facebook.icon.props,
+        secondary: false,
+      },
+    },
+  },
+});
+
+interface AccountSecurityDefaultProps {
+  email?: string;
+  isEmailSent?: boolean;
+  userProviders?: { ok: boolean; result: string[] };
+  updatePasswordRef: MutableRefObject<HTMLFormElement | null>;
+  onSwitchDisplay: (display: Display) => void;
+  onUpdatePassword: (form: ChangePasswordParams) => void;
+  onUpdateProviders: (params: UpdateProvidersParams) => void;
+}
+
+const unlinkProviderPromptOptions: PromptOptions = {
+  title: 'Remove provider?',
+  description: "You won't be able to log in with this account anymore",
+  okButton: {
+    title: 'Remove',
+    color: ButtonColor.Ketchup,
+  },
+};
+const deleteAccountPromptOptions: PromptOptions = {
+  title: 'Delete account?',
+  description:
+    'This will permanently delete your account and all associated data. This cannot be undone.',
+  okButton: {
+    title: 'Yes, delete my account',
+    color: ButtonColor.Ketchup,
+  },
+};
+
+function AccountSecurityDefault({
+  email,
+  userProviders,
+  updatePasswordRef,
+  onSwitchDisplay,
+  onUpdatePassword,
+  onUpdateProviders,
+}: AccountSecurityDefaultProps): ReactElement {
+  const { deleteAccount } = useAuthContext();
+  const { displayToast } = useToastNotification();
+  const { onUpdateSignBack } = useSignBack();
+  const hasPassword = userProviders?.result?.includes('password');
+  const { showPrompt } = usePrompt();
+
+  const manageSocialProviders = async ({
+    type,
+    provider,
+  }: ManageSocialProvidersProps) => {
+    onUpdateProviders({ [type]: provider });
+  };
+  const unlinkProvider = async (provider: string) => {
+    if (
+      await showPrompt({
+        ...unlinkProviderPromptOptions,
+        title: `Remove ${capitalize(provider)}?`,
+        okButton: {
+          title: `Yes, remove ${capitalize(provider)}`,
+          color: ButtonColor.Ketchup,
+        },
+      })
+    ) {
+      manageSocialProviders({ type: 'unlink', provider });
+    }
+  };
+  const { mutate: deleteAccountPrompt, isPending: isDeleting } = useMutation({
+    mutationKey: ['deleteAccount'],
+    mutationFn: async () => {
+      if (!deleteAccount) {
+        throw new Error('Missing deleteAccount handler');
+      }
+      if (await showPrompt(deleteAccountPromptOptions)) {
+        await deleteAccount();
+      }
+    },
+    onError: () => {
+      displayToast(DEFAULT_ERROR);
+    },
+    onSuccess: async () => {
+      await onUpdateSignBack(null, null);
+      globalThis?.localStorage.removeItem(BOOT_LOCAL_KEY);
+      window.location.replace('/');
+    },
+  });
+
+  const onChangePassword = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = formToJson<{ password: string }>(e.currentTarget);
+    onUpdatePassword(form);
+  };
+
+  return (
+    <AccountPageContainer title="Account & Security">
+      <AccountContentSection
+        className={{ heading: 'mt-0' }}
+        title="Email"
+        description="Primary email for your account"
+      >
+        <Tooltip
+          side="bottom"
+          visible={!hasPassword}
+          content={
+            <div className="w-60 py-2 typo-subhead">
+              Set a password first to change your email
+            </div>
+          }
+        >
+          <AccountTextField
+            fieldType="tertiary"
+            value={email}
+            label="Email"
+            inputId="email"
+            data-testid="current_email"
+            leftIcon={<MailIcon />}
+            rightIcon={<LockIcon className="text-text-secondary" />}
+            isLocked
+          />
+        </Tooltip>
+        {hasPassword && (
+          <Button
+            size={ButtonSize.Small}
+            variant={ButtonVariant.Secondary}
+            className="mt-6 w-fit"
+            onClick={() => onSwitchDisplay(Display.ChangeEmail)}
+          >
+            Change email
+          </Button>
+        )}
+      </AccountContentSection>
+      <AccountLoginSection
+        buttonVariant={ButtonVariant.Primary}
+        title="Login methods"
+        description="Link additional accounts for backup access and easier sign-in"
+        providerActionType="link"
+        providerAction={manageSocialProviders}
+        providers={providers.filter(
+          ({ value }) => !userProviders?.result.includes(value),
+        )}
+      />
+      <AccountLoginSection
+        title="Connected accounts"
+        description="Accounts currently linked to your profile"
+        providerAction={({ provider }) => unlinkProvider(provider)}
+        providerActionType="unlink"
+        className={{ button: 'hover:bg-accent-ketchup-default' }}
+        buttonVariant={ButtonVariant.Secondary}
+        providers={removeProviderList.filter(({ value }) =>
+          userProviders?.result.includes(value),
+        )}
+      />
+      <AccountContentSection
+        title="Password"
+        description="Set or update your account password"
+      >
+        <form
+          ref={updatePasswordRef}
+          className="flex flex-col"
+          onSubmit={onChangePassword}
+        >
+          <PasswordField
+            required
+            minLength={6}
+            className={{ container: 'mt-6 max-w-sm' }}
+            inputId="new_password"
+            label="Password"
+            name="password"
+          />
+          <Button
+            type="submit"
+            size={ButtonSize.Small}
+            variant={ButtonVariant.Secondary}
+            className="mt-6 w-fit"
+          >
+            Set password
+          </Button>
+        </form>
+      </AccountContentSection>
+      <AccountContentSection title="🚨 Danger zone">
+        <AccountDangerZone
+          onDelete={() => deleteAccountPrompt()}
+          className="mt-6"
+          buttonLoading={isDeleting}
+        />
+      </AccountContentSection>
+    </AccountPageContainer>
+  );
+}
+
+export default AccountSecurityDefault;

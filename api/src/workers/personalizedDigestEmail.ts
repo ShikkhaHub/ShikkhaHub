@@ -1,0 +1,356 @@
+import {
+  dedupedSend,
+  digestSendTypeToBriefingType,
+  getPersonalizedDigestEmailPayload,
+  resolveDigestPersonaliseState,
+  sendEmail,
+  triggerTypedEvent,
+} from '../common';
+import { remoteConfig } from '../remoteConfig';
+import { generateAndStoreNotificationsV2 } from '../notifications';
+import {
+  cleanupDigestReadyNotifications,
+  NotificationPreferenceStatus,
+  NotificationType,
+} from '../notifications/common';
+import { buildPostContext } from './notifications/utils';
+import {
+  BRIEFING_SOURCE,
+  Settings,
+  User,
+  UserPersonalizedDigest,
+  UserPersonalizedDigestSendType,
+  UserPersonalizedDigestType,
+} from '../entity';
+import { messageToJson, Worker, workerToExperimentWorker } from './worker';
+import { DataSource } from 'typeorm';
+import {
+  ExperimentAllocationClient,
+  Feature,
+  features,
+  getUserGrowthBookInstance,
+  PersonalizedDigestFeatureConfig,
+} from '../growthbook';
+
+import deepmerge from 'deepmerge';
+import { FastifyBaseLogger } from 'fastify';
+import { sendReadingReminderPush, sendStreakReminderPush } from '../onesignal';
+import { isSameDayInTimezone } from '../common/timezone';
+import { UserBriefingRequest } from '@dailydotdev/schema';
+import { BriefingModel } from '../integrations/feed/types';
+import { generateShortId } from '../ids';
+import { BriefPost } from '../entity/posts/BriefPost';
+import { upsertDigestPost } from '../common/digest';
+import { isPlusMember } from '../paddle';
+
+interface Data {
+  personalizedDigest: UserPersonalizedDigest;
+  emailSendTimestamp: number;
+  previousSendTimestamp: number;
+  emailBatchId?: string;
+  deduplicate?: boolean;
+  config?: PersonalizedDigestFeatureConfig;
+}
+
+const sendTypeToFeatureMap: Record<
+  UserPersonalizedDigestSendType,
+  Feature<PersonalizedDigestFeatureConfig>
+> = {
+  [UserPersonalizedDigestSendType.weekly]: features.personalizedDigest,
+  [UserPersonalizedDigestSendType.workdays]: features.dailyDigest,
+  [UserPersonalizedDigestSendType.daily]: features.dailyDigest,
+};
+
+const digestTypeToFunctionMap: Record<
+  UserPersonalizedDigestType,
+  (
+    data: Data,
+    con: DataSource,
+    logger: FastifyBaseLogger,
+    allocationClient?: ExperimentAllocationClient,
+  ) => Promise<void>
+> = {
+  [UserPersonalizedDigestType.Digest]: async (
+    data,
+    con,
+    logger,
+    allocationClient,
+  ) => {
+    const {
+      personalizedDigest,
+      emailSendTimestamp,
+      previousSendTimestamp,
+      emailBatchId,
+      deduplicate = true,
+      config,
+    } = data;
+    const emailSendDate = new Date(emailSendTimestamp);
+    const previousSendDate = new Date(previousSendTimestamp);
+
+    const user = await con.getRepository(User).findOne({
+      where: {
+        id: personalizedDigest.userId,
+      },
+      relations: {
+        streak: true,
+      },
+    });
+
+    if (!user?.infoConfirmed) {
+      return;
+    }
+
+    const featureInstance =
+      sendTypeToFeatureMap[
+        personalizedDigest.flags.sendType as UserPersonalizedDigestSendType
+      ] || features.personalizedDigest;
+    let featureValue: PersonalizedDigestFeatureConfig;
+    const defaultValue =
+      featureInstance.defaultValue as PersonalizedDigestFeatureConfig;
+
+    const personaliseState = await resolveDigestPersonaliseState({
+      personalizedDigest,
+      logger,
+    });
+
+    const attributes: Record<string, unknown> = {
+      plus: isPlusMember(user.subscriptionFlags?.cycle) ? 1 : 0,
+    };
+
+    if (personaliseState) {
+      attributes.snotra_personalise_state = personaliseState;
+    }
+
+    if (config) {
+      featureValue = config;
+    } else {
+      const growthbookClient = getUserGrowthBookInstance(user.id, {
+        enableDevMode: process.env.NODE_ENV !== 'production',
+        subscribeToChanges: false,
+        allocationClient,
+        attributes,
+      });
+
+      featureValue = growthbookClient.getFeatureValue(
+        featureInstance.id,
+        defaultValue,
+      );
+    }
+
+    // gb does not handle default values for nested objects
+    const digestFeature = deepmerge(defaultValue, featureValue);
+
+    const currentDate = new Date();
+
+    const result = await getPersonalizedDigestEmailPayload({
+      con,
+      logger,
+      personalizedDigest,
+      user,
+      emailBatchId,
+      emailSendDate,
+      currentDate,
+      previousSendDate,
+      feature: digestFeature,
+      personaliseState,
+    });
+
+    if (!result) {
+      return;
+    }
+
+    const { emailPayload, postIds, sourceIds, ad } = result;
+
+    await dedupedSend(
+      async () => {
+        const inAppPref =
+          user.notificationFlags?.[NotificationType.BriefingReady]?.inApp ??
+          NotificationPreferenceStatus.Subscribed;
+
+        if (remoteConfig.vars.digestPostEnabled) {
+          const digestPostId = await upsertDigestPost({
+            con,
+            userId: user.id,
+            postIds,
+            sourceIds,
+            ad,
+            adIndex: digestFeature.adIndex,
+          });
+
+          if (
+            digestPostId &&
+            inAppPref !== NotificationPreferenceStatus.Muted
+          ) {
+            const [postCtx] = await Promise.all([
+              buildPostContext(con, digestPostId),
+              cleanupDigestReadyNotifications(con.manager, user.id),
+            ]);
+
+            if (postCtx) {
+              await generateAndStoreNotificationsV2(con.manager, [
+                {
+                  type: NotificationType.DigestReady,
+                  ctx: {
+                    ...postCtx,
+                    userIds: [user.id],
+                    sendAtMs: emailSendTimestamp,
+                  },
+                },
+              ]);
+            }
+          }
+        }
+
+        const emailPref =
+          user.notificationFlags?.[NotificationType.BriefingReady]?.email ??
+          NotificationPreferenceStatus.Subscribed;
+
+        if (emailPref !== NotificationPreferenceStatus.Muted) {
+          await sendEmail(emailPayload);
+        }
+      },
+      {
+        con,
+        personalizedDigest,
+        date: currentDate,
+        deduplicate,
+      },
+    );
+  },
+  [UserPersonalizedDigestType.ReadingReminder]: async (data, con) => {
+    const { personalizedDigest, emailSendTimestamp, deduplicate = true } = data;
+    const notificationSendTimestamp = new Date(emailSendTimestamp);
+    const currentDate = new Date();
+    await dedupedSend(
+      () =>
+        sendReadingReminderPush(
+          [personalizedDigest.userId],
+          notificationSendTimestamp,
+        ),
+      {
+        con,
+        personalizedDigest,
+        date: currentDate,
+        deduplicate,
+      },
+    );
+  },
+  [UserPersonalizedDigestType.StreakReminder]: async (data, con, logger) => {
+    const { personalizedDigest, deduplicate = true } = data;
+    const { userId } = personalizedDigest;
+
+    const currentDate = new Date();
+    const userSettings = await con
+      .getRepository(Settings)
+      .findOneBy({ userId });
+
+    // Safety measure to prevent sending streak reminders to users who have opted out
+    // but for some reason still have a streak reminder scheduled
+    if (userSettings?.optOutReadingStreak) {
+      return;
+    }
+
+    const user = await con.getRepository(User).findOne({
+      where: {
+        id: userId,
+      },
+      relations: {
+        streak: true,
+      },
+    });
+
+    if (!user) {
+      logger.debug(
+        `User not found for user ${userId} when sending streak reminder.`,
+      );
+      return;
+    }
+
+    const userStreak = await user.streak;
+
+    if (!userStreak) {
+      logger.debug(
+        `User streak not found for user ${personalizedDigest.userId} when sending streak reminder.`,
+      );
+      return;
+    }
+
+    if (
+      (userStreak.lastViewAt &&
+        isSameDayInTimezone(
+          currentDate,
+          userStreak.lastViewAt,
+          user.timezone,
+        )) ||
+      userStreak.currentStreak === 0
+    ) {
+      return;
+    }
+
+    await dedupedSend(
+      () => sendStreakReminderPush([personalizedDigest.userId]),
+      {
+        con,
+        personalizedDigest,
+        date: currentDate,
+        deduplicate,
+      },
+    );
+  },
+  [UserPersonalizedDigestType.Brief]: async (data, con, logger) => {
+    const { personalizedDigest, deduplicate = true, emailSendTimestamp } = data;
+
+    await con.transaction(async (entityManager) => {
+      await dedupedSend(
+        async () => {
+          const { userId } = personalizedDigest;
+          const postId = await generateShortId();
+
+          const post = entityManager.getRepository(BriefPost).create({
+            id: postId,
+            shortId: postId,
+            authorId: userId,
+            private: true,
+            visible: false,
+            sourceId: BRIEFING_SOURCE,
+          });
+
+          await entityManager.getRepository(BriefPost).insert(post);
+
+          triggerTypedEvent(logger, 'api.v1.brief-generate', {
+            payload: new UserBriefingRequest({
+              userId,
+              frequency: digestSendTypeToBriefingType(
+                data.personalizedDigest.flags.sendType,
+              ),
+              modelName: BriefingModel.Default,
+            }),
+            postId,
+            sendAtMs: emailSendTimestamp,
+          });
+        },
+        {
+          con: entityManager,
+          personalizedDigest,
+          date: new Date(emailSendTimestamp),
+          deduplicate,
+        },
+      );
+    });
+  },
+};
+
+const worker: Worker = workerToExperimentWorker({
+  subscription: 'api.personalized-digest-email',
+  handler: async (message, con, logger, pubsub, allocationClient) => {
+    const data = messageToJson<Data>(message);
+    await digestTypeToFunctionMap[data.personalizedDigest.type](
+      data,
+      con,
+      logger,
+      allocationClient,
+    );
+  },
+});
+
+export default worker;

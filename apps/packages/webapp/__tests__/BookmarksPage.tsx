@@ -1,0 +1,140 @@
+import type { FeedData } from '@shikkhahub/shared/src/graphql/posts';
+import {
+  BookmarkSort,
+  BOOKMARKS_FEED_QUERY,
+  supportedTypesForPrivateSources,
+} from '@shikkhahub/shared/src/graphql/feed';
+import nock from 'nock';
+import React, { act } from 'react';
+import type { RenderResult } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient } from '@tanstack/react-query';
+import type { LoggedUser } from '@shikkhahub/shared/src/lib/user';
+import type { NextRouter } from 'next/router';
+import { useRouter } from 'next/router';
+import ad from '@shikkhahub/shared/__tests__/fixture/ad';
+import defaultUser from '@shikkhahub/shared/__tests__/fixture/loggedUser';
+import defaultFeedPage from '@shikkhahub/shared/__tests__/fixture/feed';
+import type { MockedGraphQLResponse } from '@shikkhahub/shared/__tests__/helpers/graphql';
+import { mockGraphQL } from '@shikkhahub/shared/__tests__/helpers/graphql';
+import { waitForNock } from '@shikkhahub/shared/__tests__/helpers/utilities';
+import { TestBootProvider } from '@shikkhahub/shared/__tests__/helpers/boot';
+import BookmarksPage from '../pages/bookmarks';
+
+const routerReplace = jest.fn();
+
+jest.mock('next/router', () => ({
+  useRouter: jest.fn(),
+}));
+
+beforeEach(() => {
+  jest.restoreAllMocks();
+  jest.clearAllMocks();
+  nock.cleanAll();
+  jest.mocked(useRouter).mockImplementation(
+    () =>
+      ({
+        pathname: '/bookmarks',
+        query: {},
+        replace: routerReplace,
+        push: jest.fn(),
+      } as unknown as NextRouter),
+  );
+});
+
+const createFeedMock = (
+  page = defaultFeedPage,
+  query: string = BOOKMARKS_FEED_QUERY,
+  variables: Record<string, unknown> = {
+    first: 7,
+    after: '',
+    loggedIn: true,
+    sort: BookmarkSort.TimeDesc,
+    supportedTypes: supportedTypesForPrivateSources,
+  },
+): MockedGraphQLResponse<FeedData> => ({
+  request: {
+    query,
+    variables,
+  },
+  result: {
+    data: {
+      page,
+    },
+  },
+});
+
+let client: QueryClient;
+
+function renderComponent(
+  mocks: MockedGraphQLResponse[] = [createFeedMock()],
+  user?: LoggedUser,
+): RenderResult {
+  const resolvedUser = arguments.length < 2 ? defaultUser : user;
+  client = new QueryClient();
+
+  mocks.forEach(mockGraphQL);
+  nock('http://localhost:3000').get('/v1/a?active=false').reply(200, [ad]);
+
+  return render(
+    <TestBootProvider client={client} auth={{ user: resolvedUser }}>
+      {BookmarksPage.getLayout(
+        <BookmarksPage />,
+        {},
+        BookmarksPage.layoutProps,
+      )}
+    </TestBootProvider>,
+  );
+}
+it('should request bookmarks feed', async () => {
+  renderComponent();
+  await waitForNock();
+  await waitFor(async () => {
+    const elements = await screen.findAllByTestId('postItem');
+    expect(elements.length).toBeTruthy();
+  });
+});
+
+it('should redirect to home page when logged-out', async () => {
+  renderComponent([], undefined);
+  await waitFor(() => expect(routerReplace).toBeCalledWith('/'));
+});
+
+it('should show empty screen when feed is empty', async () => {
+  renderComponent([
+    createFeedMock({
+      pageInfo: {
+        hasNextPage: false,
+        endCursor: null,
+      },
+      edges: [],
+    }),
+  ]);
+  await waitForNock();
+  await screen.findByText('Your bookmark list is empty.');
+  await waitFor(() => {
+    const elements = screen.queryAllByTestId('postItem');
+    expect(elements.length).toBeFalsy();
+  });
+});
+
+it('should show the search bar', async () => {
+  renderComponent();
+  await waitForNock();
+  expect(await screen.findByTestId('searchField')).toBeInTheDocument();
+});
+
+it('should update query param on enter', async () => {
+  renderComponent();
+  await waitForNock();
+  const input = await screen.findByPlaceholderText('Search bookmarks');
+  fireEvent.input(input, { target: { value: 'daily' } });
+  await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
+  fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', keyCode: 13 });
+  await waitFor(() =>
+    expect(routerReplace).toBeCalledWith({
+      pathname: '/bookmarks',
+      query: { q: 'daily' },
+    }),
+  );
+});

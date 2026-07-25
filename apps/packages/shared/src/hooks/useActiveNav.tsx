@@ -1,0 +1,82 @@
+import { useRouter } from 'next/router';
+import { useMemo } from 'react';
+import type { AllFeedPages } from '../lib/query';
+import { OtherFeedPage } from '../lib/query';
+import { SharedFeedPage } from '../components/utilities';
+import { useViewSize, ViewSize } from './useViewSize';
+
+export interface UseActiveNav {
+  home: boolean;
+  profile: boolean;
+  bookmarks: boolean;
+  notifications: boolean;
+  explore: boolean;
+  squads: boolean;
+  jobs: boolean;
+  highlights: boolean;
+}
+
+export default function useActiveNav(activeFeed: AllFeedPages): UseActiveNav {
+  const router = useRouter();
+  const isMobile = useViewSize(ViewSize.MobileL);
+  const isHomeActive = useMemo(() => {
+    const homePages = [
+      SharedFeedPage.MyFeed,
+      SharedFeedPage.Popular,
+      SharedFeedPage.Upvoted,
+      OtherFeedPage.Discussed,
+      OtherFeedPage.History,
+      SharedFeedPage.Custom,
+      SharedFeedPage.CustomForm,
+      OtherFeedPage.Tags,
+      OtherFeedPage.Sources,
+      OtherFeedPage.Leaderboard,
+      OtherFeedPage.Following,
+    ];
+
+    if (!isMobile) {
+      homePages.push(OtherFeedPage.Notifications);
+    }
+
+    if (homePages.includes(activeFeed)) {
+      return true;
+    }
+
+    if (router?.route?.startsWith('/explore/')) {
+      return true;
+    }
+
+    return router?.route?.startsWith('/posts/[id]'); // if post page the [id] was expected
+  }, [activeFeed, isMobile, router?.route]);
+
+  const explorePages: AllFeedPages[] = [
+    SharedFeedPage.Search,
+    OtherFeedPage.Explore,
+    OtherFeedPage.ExploreLatest,
+    OtherFeedPage.ExploreUpvoted,
+    OtherFeedPage.ExploreDiscussed,
+  ];
+  const isProfileActive = router.pathname?.includes('/[userId]');
+  const isJobsActive = router.pathname?.startsWith('/jobs');
+  const isHighlightsActive = router.pathname?.startsWith('/highlights');
+  const isExploreActive = explorePages.includes(activeFeed);
+  const bookmarksPages: AllFeedPages[] = [
+    OtherFeedPage.Bookmarks,
+    OtherFeedPage.BookmarkLater,
+    OtherFeedPage.BookmarkFolder,
+  ];
+  const isBookmarksActive = bookmarksPages.includes(activeFeed);
+  const isNotificationsActive = activeFeed === OtherFeedPage.Notifications;
+  const isSquadsActive = activeFeed.includes(OtherFeedPage.Squad);
+
+  return {
+    home: isHomeActive,
+    profile: isProfileActive,
+    bookmarks: isBookmarksActive,
+    notifications: isNotificationsActive,
+    explore: isExploreActive,
+    squads: isSquadsActive,
+    jobs: isJobsActive,
+    highlights: isHighlightsActive,
+  };
+}

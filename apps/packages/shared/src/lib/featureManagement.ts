@@ -1,0 +1,204 @@
+import type { JSONValue } from '@growthbook/growthbook';
+import type { FeedAdTemplate } from './feed';
+import type { FeedSettingsKeys } from '../contexts/FeedContext';
+import type { PlusItemStatus } from '../components/plus/PlusListItem';
+import { isDevelopment } from './constants';
+import { BriefingType } from '../graphql/posts';
+
+export class Feature<T extends JSONValue> {
+  readonly id: string;
+
+  readonly defaultValue: T;
+
+  constructor(id: string, defaultValue: T) {
+    this.id = id;
+    this.defaultValue = defaultValue;
+  }
+}
+
+const feature = {
+  showError: new Feature('show_error', false),
+  feedVersion: new Feature('feed_version', 15),
+  feedAdSpot: new Feature('feed_ad_spot', 2),
+  searchVersion: new Feature('search_version', 2),
+  featureTheme: new Feature('feature_theme', {}),
+  showRoadmap: new Feature('show_roadmap', true),
+  showCodeSnippets: new Feature('show_code_snippets', false),
+};
+
+export const followingFeedVersion = new Feature('following_feed_version', 2);
+export const popularFeedVersion = new Feature('popular_feed_version', 2);
+export const upvotedFeedVersion = new Feature('upvoted_feed_version', 2);
+export const discussedFeedVersion = new Feature('discussed_feed_version', 2);
+export const latestFeedVersion = new Feature('latest_feed_version', 2);
+export const customFeedVersion = new Feature('custom_feed_version', 2);
+export const featureFeedV2Highlights = new Feature('feed_v2_highlights', false);
+export const featureMajorHeadlinesPush = new Feature(
+  'major_headlines_push',
+  false,
+);
+export const featurePostPageHighlights = new Feature(
+  'post_page_highlights',
+  false,
+);
+
+// @ts-expect-error stale feature without default
+export const plusTakeoverContent = new Feature<{
+  title: string;
+  description: string;
+  features: Array<{ label: string; status: PlusItemStatus }>;
+  cta: string;
+  shouldShowRefund: boolean;
+  shouldShowReviews: boolean;
+}>('plus_takeover_content');
+
+export const featurePlusCtaCopy = new Feature('plus_cta_copy', {
+  full: 'Level Up with Plus',
+  short: 'Upgrade',
+});
+
+export const featurePlusApiLanding = new Feature('plus_api_landing_v2', false);
+
+export const featureInlineLogin = new Feature('inline_login', false);
+
+export const featureLuckyButton = new Feature('lucky_button', false);
+
+export const featureSmartComposer = new Feature('smart_composer', false);
+
+export const featureStandupCreation = new Feature('standup_creation', false);
+
+export const featureAutorotateAds = new Feature('autorotate_ads', 0);
+
+export const featureFeedAdTemplate = new Feature('feed_ad_template', {
+  default: {
+    adStart: 2,
+  },
+} as Record<FeedSettingsKeys, FeedAdTemplate>);
+
+export const featureValidLanguages = new Feature('valid_languages', {
+  en: 'English',
+  es: 'Spanish',
+  de: 'German',
+  fr: 'French',
+  it: 'Italian',
+  'zh-Hans': 'Chinese (Simplified)',
+  'pt-BR': 'Portuguese (Brazil)',
+  'pt-PT': 'Portuguese (Portugal)',
+  ja: 'Japanese',
+  ko: 'Korean',
+});
+
+export const featurePlusEntryMobile = new Feature('plus_entry_mobile', false);
+
+export const featureReadingReminderVariation = new Feature<
+  'control' | 'hero' | 'inline'
+>('reading_reminder_variation', 'control');
+
+export const featureReadingReminderHeroCopy = new Feature(
+  'reading_reminder_hero_copy',
+  {
+    title: 'Never miss a learning day',
+    subtitle: 'Turn on your daily reading reminder and keep your routine.',
+  },
+);
+
+export const clickbaitTriesMax = new Feature('clickbait_tries_max', 5);
+
+export { feature };
+
+export const featureCores = new Feature('cores', isDevelopment);
+
+// whether the user will see post boost ads
+// does not necessarily mean they can't boost a post if they have access to cores
+export const featurePostBoostAds = new Feature('post_boost_ads', isDevelopment);
+
+export const briefCardFeedFeature = new Feature(
+  'brief_card_feed',
+  isDevelopment,
+);
+
+export const profileCompletionCardFeature = new Feature(
+  'profile_completion_card',
+  isDevelopment,
+);
+
+export const briefGeneratePricing = new Feature<Record<BriefingType, number>>(
+  'brief_generate_pricing',
+  {
+    [BriefingType.Daily]: 300,
+    [BriefingType.Weekly]: 500,
+  },
+);
+
+export const briefFeedEntrypointPage = new Feature<false | number>(
+  'brief_feed_banner_page',
+  0,
+);
+
+export const briefUIFeature = new Feature('brief_ui', isDevelopment);
+export const boostSettingsFeature = new Feature('boost_settings', {
+  min: 1000,
+  max: 100000,
+  step: 1000,
+  default_cores: 5000,
+  default_days: 7,
+});
+
+export const adImprovementsV3Feature = new Feature('ad_improvements_v3', false);
+
+export const featureYearInReview = new Feature('year_in_review_2025', false);
+
+export const featureProfileCompletionIndicator = new Feature(
+  'profile_completion_indicator',
+  0,
+);
+
+export const featureNewD1Experience = new Feature(
+  'new_d1_experience',
+  isDevelopment,
+);
+
+export const questsFeature = new Feature('quests', true);
+
+export const achievementTrackingWidgetFeature = new Feature(
+  'achievement_tracking_widget',
+  false,
+);
+
+export const sharedPostPreviewFeature = new Feature(
+  'shared_post_preview',
+  false,
+);
+
+export const featureOnboardingTagRecommender = new Feature(
+  'onboarding_tag_recommender',
+  false,
+);
+
+export const featureOnboardingPersonas = new Feature(
+  'onboarding_personas',
+  false,
+);
+
+export const featurePostSignupWidget = new Feature('post_signup_widget', false);
+
+export const featureReaderModal = new Feature('reader_modal', false);
+
+export const featureGenericReferralPopupV2 = new Feature(
+  'generic_referral_popup_v2',
+  isDevelopment,
+);
+
+export const featureShortcutsHub = new Feature('shortcuts_hub', false);
+
+export const featureNewTabCustomizer = new Feature(
+  'extension_newtab_customizer',
+  false,
+);
+
+export const featureCompanionDemoWidget = new Feature(
+  'companion_demo_widget',
+  false,
+);
+
+export const featureFeedTagChips = new Feature('feed_tag_chips', false);

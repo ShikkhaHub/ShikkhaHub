@@ -1,0 +1,800 @@
+import { gql } from 'graphql-request';
+import { ORGANIZATION_SHORT_FRAGMENT } from '../organizations/graphql';
+
+export const OPPORTUNITY_CONTENT_FRAGMENT = gql`
+  fragment OpportunityContentFragment on OpportunityContentBlock {
+    html
+    content
+  }
+`;
+
+export const GCS_BLOB_FRAGMENT = gql`
+  fragment GCSBlob on GCSBlob {
+    blob
+    fileName
+    contentType
+    lastModified
+    signedUrl
+  }
+`;
+
+export const LINK_FRAGMENT = gql`
+  fragment Link on OrganizationLink {
+    type
+    socialType
+    title
+    link
+  }
+`;
+
+export const QUESTION_FRAGMENT = gql`
+  fragment OpportunityScreeningQuestionFragment on OpportunityScreeningQuestion {
+    id
+    title
+    placeholder
+  }
+`;
+
+export const FEEDBACK_QUESTION_FRAGMENT = gql`
+  fragment OpportunityFeedbackQuestionFragment on OpportunityFeedbackQuestion {
+    id
+    title
+    placeholder
+  }
+`;
+
+export const OPPORTUNITY_FRAGMENT = gql`
+  fragment OpportunityFragment on Opportunity {
+    id
+    type
+    state
+    title
+    tldr
+    organization {
+      ...OrganizationShortFragment
+
+      description
+      size
+      stage
+      website
+      perks
+      category
+      founded
+      location {
+        city
+        country
+        subdivision
+      }
+
+      customLinks {
+        ...Link
+      }
+      socialLinks {
+        ...Link
+      }
+      pressLinks {
+        ...Link
+      }
+      recruiterTotalSeats
+      recruiterSubscriptionFlags {
+        hasSlackConnection
+      }
+    }
+    content {
+      overview {
+        ...OpportunityContentFragment
+      }
+      responsibilities {
+        ...OpportunityContentFragment
+      }
+      requirements {
+        ...OpportunityContentFragment
+      }
+      whatYoullDo {
+        ...OpportunityContentFragment
+      }
+      interviewProcess {
+        ...OpportunityContentFragment
+      }
+    }
+    keywords {
+      keyword
+    }
+    recruiters {
+      id
+      name
+      username
+      image
+      title
+      bio
+    }
+    meta {
+      roleType
+      seniorityLevel
+      teamSize
+      employmentType
+      salary {
+        min
+        max
+        period
+      }
+      equity
+    }
+    locations {
+      locationId
+      type
+      location {
+        city
+        country
+        subdivision
+      }
+    }
+    questions {
+      ...OpportunityScreeningQuestionFragment
+    }
+    feedbackQuestions {
+      ...OpportunityFeedbackQuestionFragment
+    }
+    flags {
+      batchSize
+      plan
+      showSlack
+      showFeedback
+      parseErrorUserMessage
+    }
+  }
+  ${ORGANIZATION_SHORT_FRAGMENT}
+  ${OPPORTUNITY_CONTENT_FRAGMENT}
+  ${LINK_FRAGMENT}
+  ${QUESTION_FRAGMENT}
+  ${FEEDBACK_QUESTION_FRAGMENT}
+`;
+
+export const OPPORTUNITY_BY_ID_QUERY = gql`
+  query OpportunityById($id: ID!) {
+    opportunityById(id: $id) {
+      ...OpportunityFragment
+    }
+  }
+  ${OPPORTUNITY_FRAGMENT}
+`;
+
+export const OPPORTUNITY_BY_ID_PUBLIC_QUERY = gql`
+  query OpportunityByIdPublic($id: ID!) {
+    opportunityByIdPublic(id: $id) {
+      id
+      title
+      organization {
+        name
+      }
+      flags {
+        plan
+      }
+    }
+  }
+`;
+
+export const OPPORTUNITY_MATCH_FRAGMENT = gql`
+  fragment OpportunityMatchFragment on OpportunityMatch {
+    status
+    description {
+      reasoning
+    }
+    userId
+    opportunityId
+    createdAt
+    updatedAt
+    user {
+      id
+      name
+      username
+      image
+      bio
+      reputation
+      linkedin
+    }
+    candidatePreferences {
+      status
+      role
+      roleType
+      cv {
+        ...GCSBlob
+      }
+    }
+    screening {
+      screening
+      answer
+    }
+    feedback {
+      screening
+      answer
+    }
+    engagementProfile {
+      profileText
+    }
+  }
+  ${GCS_BLOB_FRAGMENT}
+`;
+
+export const GET_OPPORTUNITY_MATCH_QUERY = gql`
+  query GetOpportunityMatch($id: ID!) {
+    getOpportunityMatch(id: $id) {
+      status
+      description {
+        reasoning
+      }
+    }
+  }
+`;
+
+export const OPPORTUNITY_MATCHES_QUERY = gql`
+  query OpportunityMatches(
+    $opportunityId: ID!
+    $status: OpportunityMatchStatus
+    $after: String
+    $first: Int
+  ) {
+    opportunityMatches(
+      opportunityId: $opportunityId
+      status: $status
+      after: $after
+      first: $first
+    ) {
+      pageInfo {
+        hasNextPage
+        endCursor
+        totalCount
+      }
+      edges {
+        node {
+          userId
+          opportunityId
+          status
+          createdAt
+          updatedAt
+          description {
+            reasoning
+          }
+          screening {
+            screening
+            answer
+          }
+          engagementProfile {
+            profileText
+          }
+          user {
+            id
+            name
+            username
+            image
+            bio
+            reputation
+            linkedin
+          }
+          candidatePreferences {
+            status
+            role
+            roleType
+            cv {
+              ...GCSBlob
+            }
+          }
+          applicationRank {
+            score
+            description
+          }
+          previewUser {
+            seniority
+            location
+            company {
+              name
+              favicon
+            }
+            openToWork
+            topTags
+            recentlyRead {
+              keyword {
+                value
+              }
+              issuedAt
+            }
+            activeSquads {
+              id
+              name
+              image
+            }
+            lastActivity
+          }
+        }
+      }
+    }
+  }
+
+  ${GCS_BLOB_FRAGMENT}
+`;
+
+export const GET_CANDIDATE_PREFERENCES_QUERY = gql`
+  query GetCandidatePreferences {
+    getCandidatePreferences {
+      status
+      cv {
+        ...GCSBlob
+      }
+      employmentAgreement {
+        ...GCSBlob
+      }
+      role
+      roleType
+      salaryExpectation {
+        min
+        period
+      }
+      location {
+        city
+        country
+      }
+      locationType
+      employmentType
+      companySize
+      companyStage
+      customKeywords
+      keywords {
+        keyword
+      }
+    }
+  }
+
+  ${GCS_BLOB_FRAGMENT}
+`;
+
+export const UPDATE_CANDIDATE_PREFERENCES_MUTATION = gql`
+  mutation UpdateCandidatePreferences(
+    $status: ProtoEnumValue
+    $role: String
+    $roleType: Float
+    $employmentType: [ProtoEnumValue]
+    $salaryExpectation: SalaryExpectationInput
+    $location: [LocationInput]
+    $locationType: [ProtoEnumValue]
+    $customKeywords: Boolean
+    $externalLocationId: String
+  ) {
+    updateCandidatePreferences(
+      status: $status
+      role: $role
+      roleType: $roleType
+      employmentType: $employmentType
+      salaryExpectation: $salaryExpectation
+      location: $location
+      locationType: $locationType
+      customKeywords: $customKeywords
+      externalLocationId: $externalLocationId
+    ) {
+      _
+    }
+  }
+`;
+
+export const SAVE_OPPORTUNITY_SCREENING_ANSWERS = gql`
+  mutation SaveOpportunityScreeningAnswers(
+    $id: ID!
+    $answers: [OpportunityScreeningAnswerInput!]!
+  ) {
+    saveOpportunityScreeningAnswers(id: $id, answers: $answers) {
+      _
+    }
+  }
+`;
+
+export const SAVE_OPPORTUNITY_FEEDBACK_ANSWERS = gql`
+  mutation SaveOpportunityFeedbackAnswers(
+    $id: ID!
+    $answers: [OpportunityScreeningAnswerInput!]!
+  ) {
+    saveOpportunityFeedbackAnswers(id: $id, answers: $answers) {
+      _
+    }
+  }
+`;
+
+export const ACCEPT_OPPORTUNITY_MATCH = gql`
+  mutation AcceptOpportunityMatch($id: ID!) {
+    acceptOpportunityMatch(id: $id) {
+      _
+    }
+  }
+`;
+
+export const REJECT_OPPORTUNITY_MATCH = gql`
+  mutation RejectOpportunityMatch($id: ID!) {
+    rejectOpportunityMatch(id: $id) {
+      _
+    }
+  }
+`;
+
+export const CLEAR_RESUME_MUTATION = gql`
+  mutation ClearResume {
+    clearResume {
+      _
+    }
+  }
+`;
+
+export const AUTOCOMPLETE_KEYWORDS_QUERY = gql`
+  query AutocompleteKeywords($query: String!, $limit: Int) {
+    autocompleteKeywords(query: $query, limit: $limit) {
+      keyword
+      title
+    }
+  }
+`;
+
+export const CANDIDATE_KEYWORD_ADD_MUTATION = gql`
+  mutation CandidateAddKeywords($keywords: [String!]!) {
+    candidateAddKeywords(keywords: $keywords) {
+      _
+    }
+  }
+`;
+
+export const CANDIDATE_KEYWORD_REMOVE_MUTATION = gql`
+  mutation CandidateRemoveKeywords($keywords: [String!]!) {
+    candidateRemoveKeywords(keywords: $keywords) {
+      _
+    }
+  }
+`;
+
+export const UPLOAD_EMPLOYMENT_AGREEMENT_MUTATION = gql`
+  mutation UploadEmploymentAgreement($file: Upload!) {
+    uploadEmploymentAgreement(file: $file) {
+      _
+    }
+  }
+`;
+
+export const CLEAR_EMPLOYMENT_AGREEMENT_MUTATION = gql`
+  mutation ClearEmploymentAgreement {
+    clearEmploymentAgreement {
+      _
+    }
+  }
+`;
+
+export const EDIT_OPPORTUNITY_MUTATION = gql`
+  mutation EditOpportunity($id: ID!, $payload: OpportunityEditInput!) {
+    editOpportunity(id: $id, payload: $payload) {
+      ...OpportunityFragment
+    }
+  }
+  ${OPPORTUNITY_FRAGMENT}
+`;
+
+export const CREATE_ORGANIZATION_FOR_OPPORTUNITY_MUTATION = gql`
+  mutation CreateOrganizationForOpportunity($opportunityId: ID!) {
+    createOrganizationForOpportunity(opportunityId: $opportunityId) {
+      id
+      name
+      image
+    }
+  }
+`;
+
+export const UPDATE_RECRUITER_ORGANIZATION_MUTATION = gql`
+  mutation UpdateRecruiterOrganization(
+    $id: ID!
+    $payload: RecruiterOrganizationEditInput!
+    $organizationImage: Upload
+  ) {
+    updateRecruiterOrganization(
+      id: $id
+      payload: $payload
+      organizationImage: $organizationImage
+    ) {
+      id
+      name
+      image
+      description
+      size
+      stage
+      website
+      perks
+      category
+      founded
+      location {
+        city
+        country
+        subdivision
+      }
+      customLinks {
+        ...Link
+      }
+      socialLinks {
+        ...Link
+      }
+      pressLinks {
+        ...Link
+      }
+    }
+  }
+  ${LINK_FRAGMENT}
+`;
+
+export const CLEAR_RECRUITER_ORGANIZATION_IMAGE_MUTATION = gql`
+  mutation ClearRecruiterOrganizationImage($id: ID!) {
+    clearRecruiterOrganizationImage(id: $id) {
+      _
+    }
+  }
+`;
+
+export const RECOMMEND_OPPORTUNITY_SCREENING_QUESTIONS_MUTATION = gql`
+  mutation RecommendOpportunityScreeningQuestions($id: ID!) {
+    recommendOpportunityScreeningQuestions(id: $id) {
+      ...OpportunityScreeningQuestionFragment
+    }
+  }
+  ${QUESTION_FRAGMENT}
+`;
+
+export const UPDATE_OPPORTUNITY_STATE_MUTATION = gql`
+  mutation UpdateOpportunityState($id: ID!, $state: ProtoEnumValue!) {
+    updateOpportunityState(id: $id, state: $state) {
+      _
+    }
+  }
+`;
+
+export const OPPORTUNITIES_QUERY = gql`
+  query Opportunities($state: ProtoEnumValue, $after: String, $first: Int) {
+    opportunities(state: $state, after: $after, first: $first) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          id
+          type
+          state
+          title
+          organization {
+            ...OrganizationShortFragment
+
+            description
+            size
+            stage
+            website
+            perks
+            category
+            founded
+            location {
+              city
+              country
+              subdivision
+            }
+
+            customLinks {
+              ...Link
+            }
+            socialLinks {
+              ...Link
+            }
+            pressLinks {
+              ...Link
+            }
+          }
+          flags {
+            batchSize
+            plan
+            showSlack
+            showFeedback
+          }
+        }
+      }
+    }
+  }
+  ${ORGANIZATION_SHORT_FRAGMENT}
+  ${LINK_FRAGMENT}
+`;
+
+export const RECRUITER_ACCEPT_OPPORTUNITY_MATCH_MUTATION = gql`
+  mutation RecruiterAcceptOpportunityMatch(
+    $opportunityId: ID!
+    $candidateUserId: ID!
+  ) {
+    recruiterAcceptOpportunityMatch(
+      opportunityId: $opportunityId
+      candidateUserId: $candidateUserId
+    ) {
+      _
+    }
+  }
+`;
+
+export const RECRUITER_REJECT_OPPORTUNITY_MATCH_MUTATION = gql`
+  mutation RecruiterRejectOpportunityMatch(
+    $opportunityId: ID!
+    $candidateUserId: ID!
+  ) {
+    recruiterRejectOpportunityMatch(
+      opportunityId: $opportunityId
+      candidateUserId: $candidateUserId
+    ) {
+      _
+    }
+  }
+`;
+
+export const USER_OPPORTUNITY_MATCHES_QUERY = gql`
+  query UserOpportunityMatches($after: String, $first: Int) {
+    userOpportunityMatches(after: $after, first: $first) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          ...OpportunityMatchFragment
+          opportunity {
+            ...OpportunityFragment
+          }
+        }
+        cursor
+      }
+    }
+  }
+  ${OPPORTUNITY_MATCH_FRAGMENT}
+  ${OPPORTUNITY_FRAGMENT}
+`;
+
+export const OPPORTUNITY_PREVIEW = gql`
+  query OpportunityPreview($opportunityId: ID, $identifier: String) {
+    opportunityPreview(opportunityId: $opportunityId, identifier: $identifier) {
+      edges {
+        node {
+          id
+          profileImage
+          anonId
+          description
+          openToWork
+          seniority
+          location
+          locationVerified
+          company {
+            name
+            favicon
+          }
+          lastActivity
+          topTags
+          recentlyRead {
+            keyword {
+              value
+            }
+            issuedAt
+          }
+          activeSquads {
+            id
+            name
+            image
+          }
+        }
+        cursor
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+      result {
+        tags
+        companies {
+          name
+          favicon
+        }
+        squads {
+          id
+          name
+          image
+        }
+        totalCount
+        opportunityId
+        status
+      }
+    }
+  }
+`;
+
+export const OPPORTUNITY_STATS_QUERY = gql`
+  query OpportunityStats($opportunityId: ID!) {
+    opportunityStats(opportunityId: $opportunityId) {
+      matched
+      reached
+      considered
+      decided
+      forReview
+      introduced
+    }
+  }
+`;
+
+export const PARSE_OPPORTUNITY_MUTATION = gql`
+  mutation ParseOpportunity($payload: ParseOpportunityInput!) {
+    parseOpportunity(payload: $payload) {
+      ...OpportunityFragment
+    }
+  }
+  ${OPPORTUNITY_FRAGMENT}
+`;
+
+export const REIMPORT_OPPORTUNITY_MUTATION = gql`
+  mutation ReimportOpportunity($payload: ReimportOpportunityInput!) {
+    reimportOpportunity(payload: $payload) {
+      ...OpportunityFragment
+    }
+  }
+  ${OPPORTUNITY_FRAGMENT}
+`;
+
+export const ADD_OPPORTUNITY_SEATS_MUTATION = gql`
+  mutation AddOpportunitySeats($id: ID!, $payload: AddOpportunitySeatsInput!) {
+    addOpportunitySeats(id: $id, payload: $payload) {
+      _
+    }
+  }
+`;
+
+export const FEEDBACK_CLASSIFICATION_FRAGMENT = gql`
+  fragment FeedbackClassificationFragment on FeedbackClassification {
+    platform
+    category
+    sentiment
+    urgency
+    answer
+    userContext {
+      seniority
+      locationCountry
+    }
+  }
+`;
+
+export const OPPORTUNITY_FEEDBACK_QUERY = gql`
+  query OpportunityFeedback($opportunityId: ID!, $after: String, $first: Int) {
+    opportunityFeedback(
+      opportunityId: $opportunityId
+      after: $after
+      first: $first
+    ) {
+      pageInfo {
+        hasNextPage
+        endCursor
+        totalCount
+      }
+      edges {
+        node {
+          ...FeedbackClassificationFragment
+        }
+      }
+    }
+  }
+  ${FEEDBACK_CLASSIFICATION_FRAGMENT}
+`;
+
+export const CLAIM_OPPORTUNITIES_MUTATION = gql`
+  mutation ClaimOpportunities($identifier: String!) {
+    claimOpportunities(identifier: $identifier) {
+      ids
+    }
+  }
+`;
+
+export const OPPORTUNITY_APPLY_MUTATION = gql`
+  mutation OpportunityApply($id: ID!) {
+    opportunityApply(id: $id) {
+      ...OpportunityMatchFragment
+    }
+  }
+  ${OPPORTUNITY_MATCH_FRAGMENT}
+`;

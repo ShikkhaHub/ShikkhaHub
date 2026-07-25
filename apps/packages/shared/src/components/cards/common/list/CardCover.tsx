@@ -1,0 +1,65 @@
+import type { ReactElement } from 'react';
+import React, { useMemo } from 'react';
+import classNames from 'classnames';
+import ConditionalWrapper from '../../../ConditionalWrapper';
+import type { ReusedCardCoverProps } from '../SharedCardCover';
+import { SharedCardCover } from '../SharedCardCover';
+import { CardImage } from './ListCard';
+import { useViewSize, ViewSize } from '../../../../hooks';
+import type { ImageProps } from '../../../image/Image';
+import { isPlaceholderImage } from '../../../../lib/image';
+
+interface CardCoverProps extends ReusedCardCoverProps {
+  className?: string;
+}
+
+export function CardCoverList({
+  className,
+  imageProps,
+  ...props
+}: CardCoverProps): ReactElement | null {
+  const isLaptop = useViewSize(ViewSize.Laptop);
+  const shouldHidePlaceholder = !isLaptop && isPlaceholderImage(imageProps.src);
+
+  const optimizedImageProps: ImageProps = useMemo(() => {
+    const { src } = imageProps;
+    const mobileSrc = src?.replace('/f_auto,q_auto/', '/t_mobile_feed/');
+
+    return {
+      ...imageProps,
+      ...(!isLaptop &&
+        mobileSrc && {
+          src: mobileSrc,
+          srcSet: `${mobileSrc} 1x, ${src} 2x`,
+        }),
+    };
+  }, [imageProps, isLaptop]);
+
+  if (shouldHidePlaceholder) {
+    return null;
+  }
+
+  return (
+    <SharedCardCover
+      {...props}
+      imageProps={{
+        ...optimizedImageProps,
+        className: classNames(imageProps.className, 'w-full mobileXL:w-60'),
+      }}
+      CardImageComponent={CardImage}
+      renderOverlay={({ overlay, image }) => (
+        <ConditionalWrapper
+          condition={!!overlay}
+          wrapper={(component) => (
+            <div className={classNames('relative flex', className)}>
+              {overlay}
+              {component}
+            </div>
+          )}
+        >
+          {image}
+        </ConditionalWrapper>
+      )}
+    />
+  );
+}

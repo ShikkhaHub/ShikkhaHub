@@ -1,0 +1,22 @@
+.field {
+  --field-placeholder-color: var(--theme-text-tertiary);
+
+  &:hover {
+    background: var(--theme-surface-hover);
+    --field-placeholder-color: var(--theme-text-primary);
+  }
+
+  &:global(.focused) {
+    background: transparent;
+    border-color: var(--theme-text-primary);
+    --field-placeholder-color: var(--theme-text-quaternary);
+  }
+
+  & input::placeholder, & textarea::placeholder {
+    color: var(--field-placeholder-color);
+  }
+
+  & input:focus::placeholder, & textarea:focus::placeholder {
+    color: var(--theme-text-quaternary);
+  }
+}

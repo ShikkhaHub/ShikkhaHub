@@ -1,0 +1,132 @@
+import type { ReactElement } from 'react';
+import React, { useState } from 'react';
+import type { NextSeoProps } from 'next-seo';
+import router, { useRouter } from 'next/router';
+import { useAuthContext } from '@shikkhahub/shared/src/contexts/AuthContext';
+import Unauthorized from '@shikkhahub/shared/src/components/errors/Unauthorized';
+import { SquadDetails } from '@shikkhahub/shared/src/components/squads/Details';
+import {
+  ManageSquadPageContainer,
+  SquadSubTitle,
+  SquadTitle,
+} from '@shikkhahub/shared/src/components/squads/utils';
+import { MangeSquadPageSkeleton } from '@shikkhahub/shared/src/components/squads/MangeSquadPageSkeleton';
+import { useSquadCreate } from '@shikkhahub/shared/src/hooks/squads/useSquadCreate';
+import {
+  cloudinarySquadsCreateSquadMobile,
+  cloudinarySquadsCreateSquadBiggerThanMobile,
+} from '@shikkhahub/shared/src/lib/image';
+import { SourceIcon } from '@shikkhahub/shared/src/components/icons';
+import { IconSize } from '@shikkhahub/shared/src/components/Icon';
+import { useViewSize, ViewSize } from '@shikkhahub/shared/src/hooks';
+import { useIntegrationQuery } from '@shikkhahub/shared/src/hooks/integrations/useIntegrationQuery';
+
+import { useSlackConnectSourceMutation } from '@shikkhahub/shared/src/hooks/integrations/slack/useSlackConnectSourceMutation';
+import { SourceMemberRole } from '@shikkhahub/shared/src/graphql/sources';
+import { getLayout as getMainLayout } from '../../components/layouts/MainLayout';
+import { defaultOpenGraph, defaultSeo } from '../../next-seo';
+import { getPageSeoTitles } from '../../components/layouts/utils';
+
+const seoTitles = getPageSeoTitles('Create your Squad');
+const seo: NextSeoProps = {
+  title: seoTitles.title,
+  openGraph: { ...seoTitles.openGraph, ...defaultOpenGraph },
+  nofollow: true,
+  noindex: true,
+  ...defaultSeo,
+};
+
+const NewSquad = (): ReactElement => {
+  const [selectedChannel, setSelectedChannel] = useState<string | null>();
+  const { isReady: isRouteReady, query } = useRouter();
+  const { user, isAuthReady, isFetched } = useAuthContext();
+  const { onSave } = useSlackConnectSourceMutation();
+  const shouldLoadIntegration = query?.fs && !query?.error;
+  const integrationId = query?.iid as string;
+
+  const { onCreateSquad, isLoading } = useSquadCreate({
+    onSuccess: async (squad) => {
+      if (selectedChannel) {
+        await onSave({
+          channelId: selectedChannel,
+          integrationId,
+          sourceId: squad.id!,
+        });
+      }
+
+      router.push(squad.permalink);
+    },
+  });
+  const isMobile = useViewSize(ViewSize.MobileL);
+
+  const { data, isPending: isIntegrationLoading } = useIntegrationQuery({
+    id: integrationId,
+    queryOptions: { enabled: !!shouldLoadIntegration && !!integrationId },
+  });
+
+  const initialHandle = data?.name.toLowerCase().replace(/[^a-zA-Z0-9]/g, '');
+
+  const handleClose = async () => {
+    router.push('/squads');
+  };
+
+  if (
+    !isFetched ||
+    !isAuthReady ||
+    !isRouteReady ||
+    (isIntegrationLoading && !!shouldLoadIntegration)
+  ) {
+    return <MangeSquadPageSkeleton />;
+  }
+
+  if (!user) {
+    return <Unauthorized />;
+  }
+
+  return (
+    <ManageSquadPageContainer>
+      <SquadDetails
+        onRequestClose={handleClose}
+        onSubmit={(e, form, channelId) => {
+          setSelectedChannel(channelId);
+          onCreateSquad(form);
+        }}
+        isLoading={isLoading}
+        initialData={{
+          name: data?.name,
+          handle: initialHandle,
+          memberPostingRole: SourceMemberRole.Member,
+          moderationRequired: true,
+        }}
+        integrationId={integrationId}
+      >
+        <div className="flex flex-col-reverse bg-cover bg-center tablet:flex-row">
+          <div className="mx-6 my-5 flex flex-1 flex-col gap-2">
+            <SquadTitle className="flex flex-row">
+              <SourceIcon className="mr-0.5" size={IconSize.XLarge} />
+              Create new Squad
+            </SquadTitle>
+            <SquadSubTitle>
+              Create a group where you can learn and interact privately with
+              other developers around topics that matter to you
+            </SquadSubTitle>
+          </div>
+          <img
+            className="w-full tablet:h-[9.6875rem] tablet:w-[15.625rem]"
+            src={
+              isMobile
+                ? cloudinarySquadsCreateSquadMobile
+                : cloudinarySquadsCreateSquadBiggerThanMobile
+            }
+            alt="A collection of other people's avatars"
+          />
+        </div>
+      </SquadDetails>
+    </ManageSquadPageContainer>
+  );
+};
+
+NewSquad.getLayout = getMainLayout;
+NewSquad.layoutProps = { seo };
+
+export default NewSquad;

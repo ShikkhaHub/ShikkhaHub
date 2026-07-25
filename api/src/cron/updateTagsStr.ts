@@ -1,0 +1,55 @@
+import { Cron } from './cron';
+import { Checkpoint } from '../entity/Checkpoint';
+import { Keyword, KeywordStatus } from '../entity';
+import { MoreThanOrEqual, Not } from 'typeorm';
+
+const cron: Cron = {
+  name: 'update-tags-str',
+  handler: async (con) => {
+    const checkpointKey = 'last_tags_str_update';
+    const before = new Date();
+    let checkpoint = await con
+      .getRepository(Checkpoint)
+      .findOneBy({ key: checkpointKey });
+    const after = checkpoint?.timestamp || new Date();
+
+    await con.transaction(async (entityManager): Promise<void> => {
+      const keywords = await entityManager.getRepository(Keyword).find({
+        where: {
+          status: Not(KeywordStatus.Pending),
+          updatedAt: MoreThanOrEqual(after),
+        },
+      });
+      if (keywords.length) {
+        const keywordValues = keywords.map(({ value }) => value);
+        await entityManager.query(
+          `update post
+           set "tagsStr" = res.tags
+           from (
+                  select pk."postId",
+                         array_to_string(array_agg(pk.keyword order by pk.keyword asc, pk.keyword),
+                                         ',') as tags
+                  from post_keyword pk
+                  where pk.status = 'allow'
+                    and pk."postId" in (
+                      select pk2."postId"
+                      from post_keyword pk2
+                      where pk2.keyword = any($1)
+                    )
+                  group by pk."postId"
+                ) as res
+           where post.id = res."postId"`,
+          [keywordValues],
+        );
+      }
+      if (!checkpoint) {
+        checkpoint = new Checkpoint();
+        checkpoint.key = checkpointKey;
+      }
+      checkpoint.timestamp = before;
+      await entityManager.getRepository(Checkpoint).save(checkpoint);
+    });
+  },
+};
+
+export default cron;

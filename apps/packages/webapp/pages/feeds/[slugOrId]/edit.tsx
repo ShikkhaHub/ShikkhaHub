@@ -1,0 +1,65 @@
+import type { ReactElement } from 'react';
+import React, { useEffect } from 'react';
+import type { NextSeoProps } from 'next-seo';
+import { useFeedLayout } from '@shikkhahub/shared/src/hooks/useFeedLayout';
+import { FeedSettingsEdit } from '@shikkhahub/shared/src/components/feeds/FeedSettings/FeedSettingsEdit';
+import { useRouter } from 'next/router';
+
+import { useFeeds, usePlusSubscription } from '@shikkhahub/shared/src/hooks';
+import { FeedType } from '@shikkhahub/shared/src/graphql/feed';
+import { webappUrl } from '@shikkhahub/shared/src/lib/constants';
+import {
+  getMainFeedLayout,
+  mainFeedLayoutProps,
+} from '../../../components/layouts/MainFeedPage';
+import { defaultOpenGraph, defaultSeo } from '../../../next-seo';
+import { getPageSeoTitles } from '../../../components/layouts/utils';
+
+const seoTitles = getPageSeoTitles('Edit feed');
+const seo: NextSeoProps = {
+  title: seoTitles.title,
+  openGraph: { ...seoTitles.openGraph, ...defaultOpenGraph },
+  ...defaultSeo,
+};
+
+const EditFeedPage = (): ReactElement | null => {
+  const router = useRouter();
+  const { FeedPageLayoutComponent } = useFeedLayout();
+  const feedSlugOrId = router.query.slugOrId as string;
+  const { isPlus } = usePlusSubscription();
+  const { feeds } = useFeeds();
+  const feed = feeds?.edges.find(
+    (item) => item.node.id === feedSlugOrId || item.node.slug === feedSlugOrId,
+  );
+
+  const isFeedEditRestricted = !isPlus && feed?.node.type === FeedType.Custom;
+
+  useEffect(() => {
+    document.body.classList.add('hidden-scrollbar');
+
+    return () => {
+      document.body.classList.remove('hidden-scrollbar');
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isFeedEditRestricted) {
+      router?.replace(webappUrl);
+    }
+  }, [isFeedEditRestricted, router]);
+
+  if (isFeedEditRestricted) {
+    return null;
+  }
+
+  return (
+    <FeedPageLayoutComponent>
+      <FeedSettingsEdit feedSlugOrId={feedSlugOrId} />
+    </FeedPageLayoutComponent>
+  );
+};
+
+EditFeedPage.getLayout = getMainFeedLayout;
+EditFeedPage.layoutProps = { ...mainFeedLayoutProps, seo };
+
+export default EditFeedPage;

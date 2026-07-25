@@ -1,0 +1,232 @@
+import React from 'react';
+import type { RenderResult } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import AuthContext from '../../contexts/AuthContext';
+import type { LoggedUser } from '../../lib/user';
+import type { MainCommentProps } from './MainComment';
+import MainComment from './MainComment';
+import loggedUser from '../../../__tests__/fixture/loggedUser';
+import comment from '../../../__tests__/fixture/comment';
+import post from '../../../__tests__/fixture/post';
+import { Origin } from '../../lib/log';
+import { useViewSize } from '../../hooks';
+import { PaymentContextProvider } from '../../contexts/payment';
+
+const onDelete = jest.fn();
+const mockUseViewSize = useViewSize as jest.MockedFunction<typeof useViewSize>;
+
+jest.mock('../../hooks', () => {
+  const originalModule = jest.requireActual('../../hooks');
+  return {
+    ...originalModule,
+    useViewSize: jest.fn(),
+  };
+});
+
+const date = new Date(2024, 6, 6, 12, 30, 30);
+
+beforeEach(() => {
+  jest.useFakeTimers().setSystemTime(date);
+  jest.clearAllMocks();
+  mockUseViewSize.mockImplementation(() => true);
+});
+
+const renderLayout = (
+  props: Partial<MainCommentProps> = {},
+  user: LoggedUser | undefined = undefined,
+): RenderResult => {
+  const defaultProps: MainCommentProps = {
+    post,
+    comment,
+    onDelete,
+    postAuthorId: null,
+    postScoutId: null,
+    onCommented: jest.fn(),
+    onShare: jest.fn(),
+    onShowUpvotes: jest.fn(),
+    origin: Origin.PostCommentButton,
+  };
+
+  const client = new QueryClient();
+
+  return render(
+    <QueryClientProvider client={client}>
+      <AuthContext.Provider
+        value={{
+          user,
+          shouldShowLogin: false,
+          showLogin: jest.fn(),
+          isLoggedIn: !!user,
+          logout: jest.fn(),
+          updateUser: jest.fn(),
+          closeLogin: jest.fn(),
+          getRedirectUri: jest.fn(),
+          tokenRefreshed: true,
+          isAuthReady: true,
+        }}
+      >
+        <PaymentContextProvider>
+          <MainComment {...defaultProps} {...props} />
+        </PaymentContextProvider>
+      </AuthContext.Provider>
+    </QueryClientProvider>,
+  );
+};
+
+it('should show author profile image', async () => {
+  renderLayout();
+  const el = await screen.findByAltText(
+    `${comment.author!.username}'s profile`,
+  );
+  expect(el).toHaveAttribute('src', comment.author!.image);
+});
+
+it('should show author name', async () => {
+  renderLayout();
+  await screen.findByText(comment.author!.name);
+});
+
+it('should show formatted comment date', async () => {
+  renderLayout();
+  await screen.findByText('7y');
+});
+
+it('should show last updated comment date', async () => {
+  renderLayout({
+    comment: {
+      ...comment,
+      lastUpdatedAt: new Date(2017, 2, 10, 0, 0).toISOString(),
+    },
+  });
+  await screen.findByText('Modified 7y');
+});
+
+it('should show comment content', async () => {
+  renderLayout();
+  await screen.findByText('my comment');
+});
+
+it('should have no subcomments', async () => {
+  renderLayout();
+  expect(screen.queryAllByTestId('subcomment').length).toEqual(0);
+});
+
+it('should show expanded subcomments by default when has subcomments', async () => {
+  renderLayout({
+    comment: {
+      ...comment,
+      children: {
+        pageInfo: {},
+        edges: [
+          {
+            node: {
+              ...comment,
+              id: 'c2',
+            },
+            cursor: '',
+          },
+        ],
+      },
+    },
+  });
+  expect(screen.queryAllByTestId('subcomment').length).toEqual(1);
+  expect(screen.getByText('Hide replies')).toBeInTheDocument();
+});
+
+it('should collapse subcomments when clicking hide button', async () => {
+  renderLayout({
+    comment: {
+      ...comment,
+      children: {
+        pageInfo: {},
+        edges: [
+          {
+            node: {
+              ...comment,
+              id: 'c2',
+            },
+            cursor: '',
+          },
+        ],
+      },
+    },
+  });
+
+  const hideButton = screen.getByText('Hide replies');
+  fireEvent.click(hideButton);
+
+  expect(screen.queryAllByTestId('subcomment').length).toEqual(0);
+  expect(screen.queryByText('Hide replies')).not.toBeInTheDocument();
+  expect(screen.getByText('View 1 reply')).toBeInTheDocument();
+});
+
+it('should show correct count for multiple replies when collapsed', async () => {
+  renderLayout({
+    comment: {
+      ...comment,
+      children: {
+        pageInfo: {},
+        edges: [
+          {
+            node: {
+              ...comment,
+              id: 'c2',
+            },
+            cursor: '',
+          },
+          {
+            node: {
+              ...comment,
+              id: 'c3',
+            },
+            cursor: '',
+          },
+          {
+            node: {
+              ...comment,
+              id: 'c4',
+            },
+            cursor: '',
+          },
+        ],
+      },
+    },
+  });
+
+  // Comments are expanded by default, so first hide them
+  const hideButton = screen.getByText('Hide replies');
+  fireEvent.click(hideButton);
+
+  expect(screen.getByText('View 3 replies')).toBeInTheDocument();
+});
+
+it('should render the comment box', async () => {
+  renderLayout({}, loggedUser);
+  const el = await screen.findByLabelText('Reply');
+  el.click();
+  const [commentBox] = await screen.findAllByRole('textbox');
+  expect(commentBox).toBeInTheDocument();
+});
+
+it('should call onDelete callback', async () => {
+  renderLayout({}, loggedUser);
+  const el = await screen.findByLabelText('Options');
+  fireEvent.keyDown(el, {
+    key: ' ',
+  });
+  const [, remove] = await screen.findAllByRole('menuitem');
+  remove.click();
+  expect(onDelete).toBeCalledWith(comment, 'c1');
+});
+
+it('should show creator badge', async () => {
+  renderLayout({ postAuthorId: 'u1' }, loggedUser);
+  const el = await screen.findByText('Creator');
+  expect(el).toBeInTheDocument();
+});
+
+it('should not show hide replies button when there are no replies', async () => {
+  renderLayout();
+  expect(screen.queryByText('Hide replies')).not.toBeInTheDocument();
+});

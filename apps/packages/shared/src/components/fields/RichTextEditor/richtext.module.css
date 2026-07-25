@@ -1,0 +1,95 @@
+.editor {
+  @apply text-text-primary typo-body;
+
+  & :where(p) {
+    @apply my-2 first:mt-0 last:mb-0;
+  }
+
+  & :where(ul) {
+    @apply list-disc my-2 pl-5;
+  }
+
+  & :where(ol) {
+    @apply list-decimal my-2 pl-5;
+  }
+
+  & :where(li) {
+    @apply my-1 pl-1;
+  }
+
+  & :where(li p) {
+    @apply my-0;
+  }
+
+  & :where(a) {
+    @apply text-text-link hover:underline cursor-pointer;
+  }
+
+  & :where(strong) {
+    @apply font-bold;
+  }
+
+  & :where(h1) {
+    @apply my-3 text-text-primary typo-title1 font-bold;
+  }
+
+  & :where(h2) {
+    @apply my-3 text-text-primary typo-title2 font-bold;
+  }
+
+  & :where(h3) {
+    @apply my-3 text-text-primary typo-title3 font-bold;
+  }
+
+  & :where(h4) {
+    @apply my-3 text-text-primary typo-body font-bold;
+  }
+
+  & :where(h5) {
+    @apply my-2 text-text-primary typo-body font-bold;
+  }
+
+  & :where(h6) {
+    @apply my-2 text-text-primary typo-callout font-bold;
+  }
+
+  & :where(em) {
+    @apply italic;
+  }
+
+  & :where(code) {
+    @apply rounded-6 bg-surface-float px-1 py-0.5 font-mono text-text-primary;
+  }
+
+  & :where(pre) {
+    @apply my-3 overflow-x-auto rounded-12 bg-surface-float p-3;
+  }
+
+  & :where(pre code) {
+    @apply bg-transparent p-0;
+  }
+
+  & :where(img) {
+    @apply my-2 max-h-64 max-w-full rounded-8 object-contain tablet:max-h-[28rem];
+  }
+
+  /* Placeholder styling */
+  & :global(.is-editor-empty:first-child::before) {
+    @apply text-text-quaternary pointer-events-none float-left h-0;
+    content: attr(data-placeholder);
+  }
+
+  /* Focus state */
+  &:focus-within {
+    @apply outline-none;
+  }
+
+  /* Tiptap ProseMirror specific */
+  & :global(.ProseMirror) {
+    @apply outline-none min-h-[6rem];
+  }
+
+  & :global(.ProseMirror-focused) {
+    @apply outline-none;
+  }
+}

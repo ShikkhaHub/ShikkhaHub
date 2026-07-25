@@ -1,0 +1,1036 @@
+import { ClientError, gql } from 'graphql-request';
+import { subDays } from 'date-fns';
+import {
+  SHARED_POST_INFO_FRAGMENT,
+  TOP_READER_BADGE_FRAGMENT,
+  USER_SHORT_INFO_FRAGMENT,
+  USER_STREAK_FRAGMENT,
+} from './fragments';
+import type { PublicProfile, UserProfile, UserShortProfile } from '../lib/user';
+import type { Connection } from './common';
+import { ApiError, gqlClient } from './common';
+import type { SourceMember } from './sources';
+import type { SendType } from '../hooks';
+import type { DayOfWeek } from '../lib/date';
+import type { NotificationSettings } from '../components/notifications/utils';
+
+export const USER_SHORT_BY_ID = `
+  query UserShortById($id: ID!) {
+    user(id: $id) {
+      id
+      name
+      image
+      username
+      permalink
+    }
+  }
+`;
+
+export const CHECK_LOCATION_QUERY = gql`
+  query checkLocation {
+    checkLocation {
+      _
+    }
+  }
+`;
+
+export const JOIN_HACKATHON_MUTATION = gql`
+  mutation JoinHackathon {
+    joinHackathon {
+      _
+    }
+  }
+`;
+
+export const HACKATHON_PARTICIPATION_QUERY = gql`
+  query HackathonParticipation {
+    whoami {
+      id
+      isHackathonParticipant
+    }
+  }
+`;
+
+export type HackathonParticipationData = {
+  whoami: {
+    id: string;
+    isHackathonParticipant: boolean;
+  };
+};
+
+export const USER_BY_ID_STATIC_FIELDS_QUERY = `
+  query User($id: ID!) {
+    user(id: $id) {
+      id
+      name
+      image
+      cover
+      username
+      bio
+      timezone
+      reputation
+      permalink
+      createdAt
+      readmeHtml
+      isPlus
+      experienceLevel
+      socialLinks {
+        platform
+        url
+      }
+      location {
+        city
+        subdivision
+        country
+      }
+      companies {
+        name
+        image
+      }
+      contentPreference {
+        status
+      }
+      coresRole
+      noindex
+    }
+  }
+`;
+
+export const USER_README_QUERY = `
+  query Readme($id: ID!) {
+    user(id: $id) {
+      readme
+    }
+  }
+`;
+
+export const UPDATE_README_MUTATION = `
+  mutation UpdateReadme($content: String!) {
+    updateReadme(content: $content) {
+      readmeHtml
+    }
+  }
+`;
+
+const publicSourceMemberships = `
+sources: publicSourceMemberships(userId: $id, first: 30) {
+  edges {
+    node {
+      role
+      source {
+        id
+        name
+        handle
+        membersCount
+        image
+        permalink
+        currentMember {
+          role
+        }
+      }
+    }
+  }
+}`;
+
+export const PROFILE_V2_EXTRA_QUERY = gql`
+  query ProfileV2($id: ID!) {
+    userStats(id: $id) {
+      upvotes: numPostUpvotes
+      views: numPostViews
+      numFollowers
+      numFollowing
+    }
+    ${publicSourceMemberships}
+  }
+`;
+
+export const PUBLIC_SOURCE_MEMBERSHIPS_QUERY = gql`
+  query PublicSourceMemberships($id: ID!) {
+    ${publicSourceMemberships}
+  }
+`;
+
+export type ProfileV2 = {
+  user: PublicProfile;
+  userStats: {
+    upvotes: number;
+    views: number;
+    numFollowers: number;
+    numFollowing: number;
+  };
+  sources: Connection<SourceMember>;
+};
+
+export type UserReadingRank = { currentRank: number };
+export type MostReadTag = {
+  value: string;
+  count: number;
+  percentage?: number;
+  total?: number;
+};
+
+export type Tag = {
+  tag: string;
+  readingDays: number;
+  percentage?: number;
+};
+
+export type ProfileReadingData = UserReadingRankHistoryData &
+  UserReadHistoryData &
+  UserReadingTopTagsData &
+  UserStreakData;
+
+export type UserReadingRankHistory = { rank: number; count: number };
+
+export interface UserReadingRankHistoryData {
+  userReadingRankHistory: UserReadingRankHistory[];
+}
+
+export type UserReadHistory = { date: string; reads: number };
+
+export interface UserReadHistoryData {
+  userReadHistory: UserReadHistory[];
+}
+
+export interface UserReadingTopTagsData {
+  userMostReadTags: MostReadTag[];
+}
+
+export interface UserStreakData {
+  userStreakProfile: UserStreak;
+}
+
+export const USER_READING_HISTORY_QUERY = gql`
+  query UserReadingHistory(
+    $id: ID!
+    $after: String!
+    $before: String!
+    $version: Int
+    $limit: Int
+  ) {
+    userReadingRankHistory(
+      id: $id
+      version: $version
+      after: $after
+      before: $before
+    ) {
+      rank
+      count
+    }
+    userReadHistory(id: $id, after: $after, before: $before, grouped: true) {
+      date
+      reads
+    }
+    userMostReadTags(id: $id, after: $after, before: $before, limit: $limit) {
+      value
+      count
+      total
+      percentage
+    }
+    userStreakProfile(id: $id) {
+      max
+      total
+    }
+  }
+`;
+
+export const USER_STREAK_HISTORY = gql`
+  query UserStreakHistory($id: ID!, $after: String!, $before: String!) {
+    userReadHistory(id: $id, after: $after, before: $before) {
+      date
+      reads
+    }
+  }
+`;
+
+const READING_HISTORY_FRAGMENT = gql`
+  fragment ReadingHistoryFragment on ReadingHistory {
+    timestamp
+    timestampDb
+    post {
+      ...SharedPostInfo
+      sharedPost {
+        ...SharedPostInfo
+      }
+    }
+  }
+  ${SHARED_POST_INFO_FRAGMENT}
+`;
+
+const READING_HISTORY_CONNECTION_FRAGMENT = gql`
+  ${READING_HISTORY_FRAGMENT}
+  fragment ReadingHistoryConnectionFragment on ReadingHistoryConnection {
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+    edges {
+      node {
+        ...ReadingHistoryFragment
+      }
+    }
+  }
+`;
+
+export interface HidePostItemCardProps {
+  timestamp: Date;
+  postId: string;
+}
+
+export const SEARCH_READING_HISTORY_SUGGESTIONS = gql`
+  query SearchReadingHistorySuggestions($query: String!) {
+    searchReadingHistorySuggestions(query: $query) {
+      hits {
+        title
+      }
+    }
+  }
+`;
+
+export const SEARCH_READING_HISTORY_QUERY = gql`
+  ${READING_HISTORY_CONNECTION_FRAGMENT}
+  query SearchReadingHistory($first: Int, $after: String, $query: String!) {
+    readHistory: searchReadingHistory(
+      first: $first
+      after: $after
+      query: $query
+    ) {
+      ...ReadingHistoryConnectionFragment
+    }
+  }
+`;
+
+export const READING_HISTORY_QUERY = gql`
+  ${READING_HISTORY_CONNECTION_FRAGMENT}
+  query ReadHistory($after: String, $first: Int, $isPublic: Boolean) {
+    readHistory(after: $after, first: $first, isPublic: $isPublic) {
+      ...ReadingHistoryConnectionFragment
+    }
+  }
+`;
+
+export const HIDE_READING_HISTORY_MUTATION = gql`
+  mutation HideReadHistory($postId: String!, $timestamp: DateTime!) {
+    hideReadHistory(postId: $postId, timestamp: $timestamp) {
+      _
+    }
+  }
+`;
+
+export const SET_PASSWORD_MUTATION = gql`
+  mutation SetPassword($newPassword: String!) {
+    setPassword(newPassword: $newPassword) {
+      _
+    }
+  }
+`;
+
+export const UPDATE_USER_PROFILE_MUTATION = gql`
+  mutation UpdateUserProfile($data: UpdateUserInput, $upload: Upload) {
+    updateUserProfile(data: $data, upload: $upload) {
+      id
+      name
+      image
+      username
+      permalink
+      bio
+      readme
+      createdAt
+      infoConfirmed
+      timezone
+      experienceLevel
+      language
+      socialLinks {
+        platform
+        url
+      }
+    }
+  }
+`;
+
+export const UPDATE_USER_INFO_MUTATION = gql`
+  mutation UpdateUserInfo(
+    $data: UpdateUserInfoInput
+    $upload: Upload
+    $coverUpload: Upload
+  ) {
+    updateUserInfo(data: $data, upload: $upload, coverUpload: $coverUpload) {
+      id
+      name
+      image
+      cover
+      username
+      permalink
+      bio
+      readme
+      createdAt
+      infoConfirmed
+      timezone
+      experienceLevel
+      hideExperience
+      language
+      socialLinks {
+        platform
+        url
+      }
+    }
+  }
+`;
+
+export const mutateUserInfo = async (
+  data: Partial<UserProfile>,
+  upload?: File | null,
+  coverUpload?: File | null,
+) => {
+  const res = await gqlClient.request(UPDATE_USER_INFO_MUTATION, {
+    data,
+    upload,
+    coverUpload,
+  });
+
+  return res.updateUserInfo;
+};
+
+export const UPLOAD_COVER_MUTATION = gql`
+  mutation UploadCoverImage($upload: Upload!) {
+    user: uploadCoverImage(image: $upload) {
+      cover
+    }
+  }
+`;
+
+export const GET_USERNAME_SUGGESTION = gql`
+  query GenerateUniqueUsername($name: String!) {
+    generateUniqueUsername(name: $name)
+  }
+`;
+
+export const generateUsername = async (name: string): Promise<string> => {
+  const result = await gqlClient.request<{ generateUniqueUsername: string }>(
+    GET_USERNAME_SUGGESTION,
+    { name },
+  );
+  return result.generateUniqueUsername;
+};
+
+export const GET_USER_COMPANIES = gql`
+  query Companies {
+    companies {
+      email
+      company {
+        id
+        name
+        image
+      }
+    }
+  }
+`;
+
+export const ADD_USER_COMPANY_MUTATION = gql`
+  mutation AddUserCompany($email: String!) {
+    addUserCompany(email: $email) {
+      _
+    }
+  }
+`;
+
+export const VERIFY_USER_COMPANY_CODE_MUTATION = gql`
+  mutation VerifyUserCompanyCode($email: String!, $code: String!) {
+    verifyUserCompanyCode(email: $email, code: $code) {
+      email
+      company {
+        id
+        name
+        image
+      }
+    }
+  }
+`;
+
+export const REMOVE_USER_COMPANY_MUTATION = gql`
+  mutation RemoveUserCompany($email: String!) {
+    removeUserCompany(email: $email) {
+      _
+    }
+  }
+`;
+
+// Using string constructor to avoid Babel unicode-regex transformation issues
+export const handleRegex = new RegExp(
+  '^@?[\\p{L}\\p{N}]([\\p{L}\\p{N}_]){2,38}$',
+  'iu',
+);
+// Using string constructor to avoid Babel unicode-regex transformation issues
+export const socialHandleRegex = new RegExp(
+  '^@?([\\p{L}\\p{N}_-]){1,39}$',
+  'iu',
+);
+export const REFERRAL_CAMPAIGN_QUERY = gql`
+  query ReferralCampaign($referralOrigin: String!) {
+    referralCampaign(referralOrigin: $referralOrigin) {
+      referredUsersCount
+      referralCountLimit
+      referralToken
+      url
+    }
+  }
+`;
+
+export const GET_REFERRING_USER_QUERY = gql`
+  query User($id: ID!) {
+    user(id: $id) {
+      ...UserShortInfo
+    }
+  }
+  ${USER_SHORT_INFO_FRAGMENT}
+`;
+
+export const getUserShortInfo = async (
+  id: string,
+): Promise<UserShortProfile> => {
+  const res = await gqlClient.request(GET_REFERRING_USER_QUERY, { id });
+
+  return res.user || null;
+};
+
+export enum UserPersonalizedDigestType {
+  Digest = 'digest',
+  ReadingReminder = 'reading_reminder',
+  StreakReminder = 'streak_reminder',
+  Brief = 'brief',
+}
+
+export type UserPersonalizedDigest = {
+  preferredDay: number;
+  preferredHour: number;
+  type?: UserPersonalizedDigestType;
+  flags: {
+    sendType?: SendType;
+  };
+};
+
+export type UserPersonalizedDigestSubscribe = {
+  day?: number;
+  hour?: number;
+  type?: UserPersonalizedDigestType;
+  sendType?: SendType;
+};
+
+export const GET_PERSONALIZED_DIGEST_SETTINGS = gql`
+  query PersonalizedDigest {
+    personalizedDigest {
+      preferredDay
+      preferredHour
+      type
+      flags {
+        sendType
+      }
+    }
+  }
+`;
+
+export const REFERRED_USERS_QUERY = gql`
+  query ReferredUsers {
+    referredUsers {
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
+      edges {
+        node {
+          ...UserShortInfo
+        }
+      }
+    }
+  }
+  ${USER_SHORT_INFO_FRAGMENT}
+`;
+
+export const SUBSCRIBE_PERSONALIZED_DIGEST_MUTATION = gql`
+  mutation SubscribePersonalizedDigest(
+    $hour: Int
+    $day: Int
+    $type: DigestType
+    $sendType: UserPersonalizedDigestSendType
+  ) {
+    subscribePersonalizedDigest(
+      hour: $hour
+      day: $day
+      type: $type
+      sendType: $sendType
+    ) {
+      preferredDay
+      preferredHour
+      type
+      flags {
+        sendType
+      }
+    }
+  }
+`;
+
+export const UNSUBSCRIBE_PERSONALIZED_DIGEST_MUTATION = gql`
+  mutation UnsubscribePersonalizedDigest($type: DigestType) {
+    unsubscribePersonalizedDigest(type: $type) {
+      _
+    }
+  }
+`;
+
+export interface ReadingDay {
+  date: string;
+  reads: number;
+}
+
+export const getReadingStreak30Days = async (
+  id: string,
+  start: Date = subDays(new Date(), 30),
+): Promise<ReadingDay[]> => {
+  const today = new Date();
+  const res = await gqlClient.request(USER_STREAK_HISTORY, {
+    after: start.toISOString(),
+    before: today.toISOString(),
+    id,
+  });
+
+  return res.userReadHistory;
+};
+
+export const USER_STREAK_QUERY = gql`
+  query UserStreak {
+    userStreak {
+      ...UserStreakFragment
+    }
+  }
+  ${USER_STREAK_FRAGMENT}
+`;
+
+export interface UserStreak {
+  max: number;
+  total: number;
+  current: number;
+  weekStart: DayOfWeek;
+  lastViewAt: Date;
+}
+
+export interface UserProfileAnalytics {
+  id: string;
+  uniqueVisitors: number;
+  updatedAt: Date;
+}
+
+export interface UserProfileAnalyticsHistory {
+  id: string;
+  date: string;
+  uniqueVisitors: number;
+  updatedAt: Date;
+}
+
+export interface UserPostsAnalytics {
+  id: string;
+  impressions: number;
+  reach: number;
+  upvotes: number;
+  comments: number;
+  bookmarks: number;
+  awards: number;
+  profileViews: number;
+  followers: number;
+  reputation: number;
+  coresEarned: number;
+  shares: number;
+  clicks: number;
+  upvotesRatio: number;
+}
+
+export interface UserPostsAnalyticsHistoryNode {
+  date: string;
+  impressions: number;
+  impressionsAds: number;
+}
+
+export const getReadingStreak = async (): Promise<UserStreak> => {
+  const res = await gqlClient.request(USER_STREAK_QUERY);
+
+  return res.userStreak;
+};
+
+export const USER_PROFILE_ANALYTICS_QUERY = gql`
+  query UserProfileAnalytics($userId: ID!) {
+    userProfileAnalytics(userId: $userId) {
+      id
+      uniqueVisitors
+      updatedAt
+    }
+  }
+`;
+
+export const USER_PROFILE_ANALYTICS_HISTORY_QUERY = gql`
+  query UserProfileAnalyticsHistory($userId: ID!, $first: Int) {
+    userProfileAnalyticsHistory(userId: $userId, first: $first) {
+      edges {
+        node {
+          id
+          date
+          uniqueVisitors
+        }
+      }
+    }
+  }
+`;
+
+export interface UserStreakRecoverData {
+  canRecover: boolean;
+  cost: number;
+  oldStreakLength: number;
+  regularCost?: number;
+}
+
+export const USER_STREAK_RECOVER_QUERY = gql`
+  query UserStreakRecover {
+    streakRecover {
+      canRecover
+      cost
+      oldStreakLength
+      regularCost
+    }
+  }
+`;
+
+export const USER_STREAK_RECOVER_MUTATION = gql`
+  mutation RecoverStreak {
+    recoverStreak(cores: true) {
+      ...UserStreakFragment
+      balance {
+        amount
+      }
+    }
+  }
+  ${USER_STREAK_FRAGMENT}
+`;
+
+export const DEV_CARD_QUERY = gql`
+  query DevCardById($id: ID!) {
+    devCard(id: $id) {
+      id
+      user {
+        ...UserShortInfo
+        createdAt
+        cover
+      }
+      createdAt
+      theme
+      isProfileCover
+      showBorder
+      articlesRead
+      tags
+      sources {
+        name
+        permalink
+        image
+      }
+    }
+    userStreakProfile(id: $id) {
+      max
+    }
+  }
+  ${USER_SHORT_INFO_FRAGMENT}
+`;
+
+export enum AcquisitionChannel {
+  Friend = 'friend',
+  InstagramFacebook = 'instagram_facebook',
+  YouTube = 'youtube',
+  TikTok = 'tiktok',
+  SearchEngine = 'search_engine',
+  Advertisement = 'ad',
+  Other = 'other',
+}
+
+export const USER_ACQUISITION_MUTATION = gql`
+  mutation AddUserAcquisitionChannel($acquisitionChannel: String!) {
+    addUserAcquisitionChannel(acquisitionChannel: $acquisitionChannel) {
+      _
+    }
+  }
+`;
+
+export const updateUserAcquisition = (
+  acquisitionChannel: AcquisitionChannel,
+): Promise<void> =>
+  gqlClient.request(USER_ACQUISITION_MUTATION, { acquisitionChannel });
+
+export const CLEAR_MARKETING_CTA_MUTATION = gql`
+  mutation ClearUserMarketingCta($campaignId: String!) {
+    clearUserMarketingCta(campaignId: $campaignId) {
+      _
+    }
+  }
+`;
+
+export const VOTE_MUTATION = gql`
+  mutation Vote($id: ID!, $entity: UserVoteEntity!, $vote: Int!) {
+    vote(id: $id, entity: $entity, vote: $vote) {
+      _
+    }
+  }
+`;
+
+export const UPDATE_STREAK_COUNT_MUTATION = gql`
+  mutation UpdateStreakConfig($weekStart: Int) {
+    updateStreakConfig(weekStart: $weekStart) {
+      ...UserStreakFragment
+    }
+  }
+  ${USER_STREAK_FRAGMENT}
+`;
+
+export const USER_INTEGRATIONS = gql`
+  query UserIntegrations {
+    userIntegrations {
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
+      edges {
+        node {
+          id
+          type
+          name
+        }
+      }
+    }
+  }
+`;
+
+export const USER_INTEGRATION_BY_ID = gql`
+  query UserIntegrationById($id: ID!) {
+    userIntegration(id: $id) {
+      id
+      type
+      name
+    }
+  }
+`;
+
+export const TOP_READER_BADGE = gql`
+  query TopReaderBadge($userId: ID!, $limit: Int) {
+    topReaderBadge(limit: $limit, userId: $userId) {
+      ...TopReader
+    }
+  }
+
+  ${TOP_READER_BADGE_FRAGMENT}
+`;
+
+export const TOP_CREATORS_BY_TAG_QUERY = gql`
+  query TopCreatorsByTag($tag: String!, $limit: Int) {
+    topCreatorsByTag(tag: $tag, limit: $limit) {
+      ...UserShortInfo
+    }
+  }
+
+  ${USER_SHORT_INFO_FRAGMENT}
+`;
+
+export const TOP_READER_BADGE_BY_ID = gql`
+  query TopReaderBadgeById($id: ID!) {
+    topReaderBadgeById(id: $id) {
+      ...TopReader
+    }
+  }
+
+  ${TOP_READER_BADGE_FRAGMENT}
+`;
+
+export const GET_NOTIFICATION_SETTINGS = gql`
+  query NotificationSettings {
+    notificationSettings
+  }
+`;
+
+export const getBasicUserInfo = async (
+  userId: string,
+): Promise<UserShortProfile> => {
+  const res = await gqlClient.request(GET_REFERRING_USER_QUERY, {
+    id: userId,
+  });
+
+  return res.user || null;
+};
+
+export enum UploadPreset {
+  Avatar = 'avatar',
+  ProfileCover = 'cover',
+}
+
+export const CLEAR_IMAGE_MUTATION = gql`
+  mutation ClearImage($presets: [UploadPreset]!) {
+    clearImage(presets: $presets) {
+      _
+    }
+  }
+`;
+
+export const clearImage = async (presets: string[]): Promise<void> => {
+  await gqlClient.request(CLEAR_IMAGE_MUTATION, { presets });
+};
+
+export const GET_PLUS_GIFTER_USER = gql`
+  query PlusGifterUser {
+    plusGifterUser {
+      id
+      name
+      image
+      username
+    }
+  }
+`;
+export const getPlusGifterUser = async (): Promise<UserShortProfile | null> => {
+  try {
+    const res = await gqlClient.request(GET_PLUS_GIFTER_USER);
+    return res.plusGifterUser;
+  } catch (error) {
+    if (error instanceof ClientError) {
+      const errorCode = error.response?.errors?.[0]?.extensions?.code;
+      if (errorCode === ApiError.Forbidden) {
+        return null;
+      }
+    }
+
+    throw error;
+  }
+};
+
+export const REQUEST_APP_ACCOUNT_TOKEN_MUTATION = gql`
+  mutation RequestAppAccountToken {
+    requestAppAccountToken
+  }
+`;
+
+const CLAIM_CLAIMABLE_ITEM_MUTATION = gql`
+  mutation ClaimClaimableItem {
+    claimUnclaimedItem {
+      claimed
+    }
+  }
+`;
+
+export const claimClaimableItem = async (): Promise<boolean> => {
+  try {
+    const {
+      claimUnclaimedItem: { claimed },
+    } = await gqlClient.request<{
+      claimUnclaimedItem: { claimed: boolean };
+    }>(CLAIM_CLAIMABLE_ITEM_MUTATION);
+    return claimed;
+  } catch (error) {
+    return false;
+  }
+};
+
+const UPLOAD_CV_MUTATION = gql`
+  mutation UploadResume($resume: Upload!) {
+    uploadResume(resume: $resume) {
+      _
+    }
+  }
+`;
+
+export const uploadCv = (file: File) =>
+  gqlClient.request(UPLOAD_CV_MUTATION, { resume: file });
+
+const UPDATE_NOTIFICATION_SETTINGS_MUTATION = gql`
+  mutation UpdateNotificationSettings($notificationFlags: JSON!) {
+    updateNotificationSettings(notificationFlags: $notificationFlags) {
+      _
+    }
+  }
+`;
+
+export const updateNotificationSettings = async (
+  notificationFlags: NotificationSettings,
+): Promise<void> => {
+  await gqlClient.request(UPDATE_NOTIFICATION_SETTINGS_MUTATION, {
+    notificationFlags,
+  });
+};
+
+export const USER_POSTS_ANALYTICS_QUERY = gql`
+  query UserPostsAnalytics {
+    userPostsAnalytics {
+      id
+      impressions
+      reach
+      upvotes
+      comments
+      bookmarks
+      awards
+      profileViews
+      followers
+      reputation
+      coresEarned
+      shares
+      clicks
+      upvotesRatio
+    }
+  }
+`;
+
+export const USER_POSTS_ANALYTICS_HISTORY_QUERY = gql`
+  query UserPostsAnalyticsHistory {
+    userPostsAnalyticsHistory {
+      date
+      impressions
+      impressionsAds
+    }
+  }
+`;
+
+export interface UserPostWithAnalytics {
+  id: string;
+  title: string | null;
+  image: string | null;
+  createdAt: string;
+  commentsPermalink: string;
+  isBoosted: boolean;
+  sharedPost?: {
+    title: string | null;
+    image: string | null;
+  } | null;
+  analytics: {
+    impressions: number;
+    upvotes: number;
+    reputation: number;
+  } | null;
+}
+
+export const USER_POSTS_WITH_ANALYTICS_QUERY = gql`
+  query UserPostsWithAnalytics($after: String, $first: Int) {
+    userPostsWithAnalytics(after: $after, first: $first) {
+      edges {
+        cursor
+        node {
+          id
+          title
+          image
+          createdAt
+          commentsPermalink
+          sharedPost {
+            title
+            image
+          }
+          analytics {
+            impressions
+            upvotes
+            reputation
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+`;

@@ -1,0 +1,253 @@
+import type {
+  Dispatch,
+  PropsWithChildren,
+  ReactElement,
+  ReactNode,
+  SetStateAction,
+} from 'react';
+import React, { useContext } from 'react';
+import classed from '../../lib/classed';
+import { SharedFeedPage } from '../utilities';
+import MyFeedHeading from '../filters/MyFeedHeading';
+import type { DropdownProps } from '../fields/Dropdown';
+import { Dropdown } from '../fields/Dropdown';
+import { Button } from '../buttons/Button';
+import { ButtonSize, ButtonVariant } from '../buttons/common';
+import {
+  CalendarIcon,
+  ChromeIcon,
+  ClearIcon,
+  EdgeIcon,
+  SortIcon,
+} from '../icons';
+import { IconSize } from '../Icon';
+import { RankingAlgorithm } from '../../graphql/feed';
+import SettingsContext from '../../contexts/SettingsContext';
+import { useAuthContext } from '../../contexts/AuthContext';
+import { useLogContext } from '../../contexts/LogContext';
+import { useFeedName } from '../../hooks/feed/useFeedName';
+import { useActions, useViewSize, ViewSize } from '../../hooks';
+import { ReadingStreakButton } from '../streak/ReadingStreakButton';
+import { useReadingStreak } from '../../hooks/streaks';
+import type { AllFeedPages } from '../../lib/query';
+import { QueryStateKeys, useQueryState } from '../../hooks/utils/useQueryState';
+import type { AllowedTags, TypographyProps } from '../typography/Typography';
+import { Typography } from '../typography/Typography';
+import { ToggleClickbaitShield } from '../buttons/ToggleClickbaitShield';
+import { LogEvent, Origin } from '../../lib/log';
+import { AchievementTrackerButton } from '../filters/AchievementTrackerButton';
+import { IntroQuestButton } from '../filters/IntroQuestButton';
+import { LuckyButton } from '../filters/LuckyButton';
+import { ActionType } from '../../graphql/actions';
+import {
+  BrowserName,
+  checkIsExtension,
+  getCurrentBrowserName,
+  isExtensionCapableBrowser,
+  isNullOrUndefined,
+} from '../../lib/func';
+import { downloadBrowserExtension } from '../../lib/constants';
+import { anchorDefaultRel } from '../../lib/strings';
+import ConditionalWrapper from '../ConditionalWrapper';
+import { useNewD1ExperienceFeature } from '../../hooks/useNewD1ExperienceFeature';
+
+type State<T> = [T, Dispatch<SetStateAction<T>>];
+
+export interface SearchControlHeaderProps {
+  feedName: AllFeedPages;
+  algoState: State<number>;
+  chips?: ReactNode;
+}
+
+export const LayoutHeader = classed(
+  'header',
+  'flex justify-between items-center overflow-x-auto relative mb-6 min-h-14 w-full no-scrollbar',
+);
+
+export const algorithms = [
+  { value: RankingAlgorithm.Popularity, text: 'Recommended' },
+  { value: RankingAlgorithm.Time, text: 'By date' },
+];
+export const algorithmsList = algorithms.map((algo) => algo.text);
+export const periods = [
+  { value: 7, text: 'Last week' },
+  { value: 30, text: 'Last month' },
+  { value: 365, text: 'Last year' },
+];
+export const periodTexts = periods.map((period) => period.text);
+
+export const DEFAULT_ALGORITHM_KEY = 'feed:algorithm';
+export const DEFAULT_ALGORITHM_INDEX = 0;
+
+export const SearchControlHeader = ({
+  feedName,
+  algoState: [selectedAlgo, setSelectedAlgo],
+  chips,
+}: SearchControlHeaderProps): ReactElement | null => {
+  const [selectedPeriod, setSelectedPeriod] = useQueryState({
+    key: [QueryStateKeys.FeedPeriod],
+    defaultValue: 0,
+  });
+  const { user } = useAuthContext();
+  const { logEvent } = useLogContext();
+  const { sortingEnabled } = useContext(SettingsContext);
+  const { isUpvoted, isSortableFeed } = useFeedName({ feedName });
+  const isLaptop = useViewSize(ViewSize.Laptop);
+  const isMobile = useViewSize(ViewSize.MobileL);
+  const { streak, isLoading, isStreaksEnabled } = useReadingStreak();
+  const { checkHasCompleted, completeAction, isActionsFetched } = useActions();
+  const browserName = getCurrentBrowserName();
+  const isEdge = browserName === BrowserName.Edge;
+  const feedsWithActions = [
+    SharedFeedPage.MyFeed,
+    SharedFeedPage.Custom,
+    SharedFeedPage.CustomForm,
+  ];
+  const hasFeedActions = feedsWithActions.includes(feedName as SharedFeedPage);
+  const hasDismissedInstallExtension = checkHasCompleted(
+    ActionType.DismissInstallExtension,
+  );
+  const canInstallExtension =
+    !checkIsExtension() &&
+    isExtensionCapableBrowser() &&
+    isNullOrUndefined(user?.flags?.lastExtensionUse);
+  const shouldEvaluateInstallExtensionPrompt =
+    hasFeedActions &&
+    isActionsFetched &&
+    canInstallExtension &&
+    !hasDismissedInstallExtension;
+  const { value: isNewD1Experience } = useNewD1ExperienceFeature({
+    shouldEvaluate: shouldEvaluateInstallExtensionPrompt,
+  });
+
+  if (isMobile) {
+    return null;
+  }
+
+  const dropdownProps: Partial<DropdownProps> = {
+    className: {
+      label: 'hidden',
+      chevron: 'hidden',
+      button: '!px-1',
+      container: 'flex',
+    },
+    shouldIndicateSelected: true,
+    buttonSize: isMobile ? ButtonSize.Small : ButtonSize.Medium,
+    iconOnly: true,
+    buttonVariant: isLaptop ? ButtonVariant.Float : ButtonVariant.Tertiary,
+  };
+
+  const shouldShowInstallExtensionPrompt =
+    shouldEvaluateInstallExtensionPrompt && !isNewD1Experience;
+  const installExtensionButton = shouldShowInstallExtensionPrompt && (
+    <React.Fragment key="install-extension">
+      <Button
+        key="install-extension"
+        tag="a"
+        href={downloadBrowserExtension}
+        variant={isLaptop ? ButtonVariant.Float : ButtonVariant.Tertiary}
+        size={ButtonSize.Medium}
+        icon={isEdge ? <EdgeIcon aria-hidden /> : <ChromeIcon aria-hidden />}
+        rel={anchorDefaultRel}
+        target="_blank"
+        className="ml-auto"
+        onClick={() =>
+          logEvent({
+            event_name: LogEvent.DownloadExtension,
+            origin: Origin.Feed,
+          })
+        }
+      >
+        Get it for {isEdge ? 'Edge' : 'Chrome'}
+      </Button>
+      <Button
+        variant={ButtonVariant.Tertiary}
+        size={ButtonSize.Small}
+        icon={<ClearIcon secondary />}
+        onClick={() => completeAction(ActionType.DismissInstallExtension)}
+      />
+    </React.Fragment>
+  );
+
+  const primaryActions = [
+    hasFeedActions && <MyFeedHeading key="my-feed" />,
+    isUpvoted ? (
+      <Dropdown
+        {...dropdownProps}
+        key="algorithm"
+        icon={<CalendarIcon size={IconSize.Medium} />}
+        selectedIndex={selectedPeriod}
+        options={periodTexts}
+        onChange={(_, index) => setSelectedPeriod(index)}
+      />
+    ) : null,
+    sortingEnabled && isSortableFeed && (
+      <Dropdown
+        {...dropdownProps}
+        key="sorting"
+        icon={<SortIcon size={IconSize.Medium} />}
+        selectedIndex={selectedAlgo}
+        options={algorithmsList}
+        onChange={(_, index) => setSelectedAlgo(index)}
+        drawerProps={{ displayCloseButton: true }}
+      />
+    ),
+    hasFeedActions && (
+      <ToggleClickbaitShield
+        origin={
+          feedName === SharedFeedPage.Custom ? Origin.CustomFeed : Origin.Feed
+        }
+        key="toggle-clickbait-shield"
+      />
+    ),
+    hasFeedActions && <IntroQuestButton key="intro-quests" />,
+    hasFeedActions && <AchievementTrackerButton key="achievement-tracker" />,
+    hasFeedActions && <LuckyButton key="lucky" />,
+  ];
+  const secondaryActions = [isLaptop && installExtensionButton];
+  const actions = primaryActions.filter(Boolean);
+  const sideActions = secondaryActions.filter(Boolean);
+
+  return (
+    <ConditionalWrapper
+      condition={!isLaptop}
+      wrapper={(children) => {
+        const wrapperChildren = (
+          <div className="flex items-center gap-2">{children}</div>
+        );
+
+        return (
+          <div className="flex w-full items-center justify-between tablet:mb-2 tablet:p-2">
+            {wrapperChildren}
+
+            {isStreaksEnabled && streak && (
+              <div className="flex-0">
+                <ReadingStreakButton streak={streak} isLoading={isLoading} />
+              </div>
+            )}
+          </div>
+        );
+      }}
+    >
+      <div className="flex w-full items-center gap-2">
+        {!!chips && <div className="min-w-0 flex-1">{chips}</div>}
+        <div className="flex shrink-0 items-center gap-2">{actions}</div>
+        {sideActions.length > 0 && (
+          <div className="ml-auto flex items-center gap-2">{sideActions}</div>
+        )}
+      </div>
+    </ConditionalWrapper>
+  );
+};
+
+export const PageHeader = classed(
+  'div',
+  'flex flex-row items-center border-b border-border-subtlest-tertiary px-4 py-2 gap-1',
+);
+
+export const PageHeaderTitle = ({
+  children,
+  ...props
+}: PropsWithChildren<TypographyProps<AllowedTags>>): ReactElement => (
+  <Typography {...props}>{children}</Typography>
+);

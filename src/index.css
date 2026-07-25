@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 98%;
+    --foreground: 0 0% 9%;
+    --card: 0 0% 100%;
+    --card-hover: 0 0% 96%;
+    --card-foreground: 0 0% 9%;
+    --primary: 243 75% 59%;
+    --primary-hover: 244 55% 52%;
+    --primary-light: 239 84% 95%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 96%;
+    --secondary-hover: 0 0% 90%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
+    --border: 0 0% 90%;
+    --ring: 0 0% 90%;
+    --accent-blue: 214 100% 97%;
+    --accent-purple: 276 100% 98%;
+    --accent-green: 142 71% 97%;
+    --accent-orange: 27 100% 97%;
+    --accent-pink: 327 73% 97%;
+  }
+
+  .dark {
+    --background: 0 0% 7%;
+    --foreground: 0 0% 93%;
+    --card: 0 0% 10%;
+    --card-hover: 0 0% 15%;
+    --card-foreground: 0 0% 93%;
+    --primary: 243 75% 59%;
+    --primary-hover: 244 60% 65%;
+    --primary-light: 243 30% 20%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 15%;
+    --secondary-hover: 0 0% 20%;
+    --secondary-foreground: 0 0% 93%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 60%;
+    --border: 0 0% 20%;
+    --ring: 0 0% 20%;
+    --accent-blue: 214 30% 15%;
+    --accent-purple: 276 30% 15%;
+    --accent-green: 142 30% 15%;
+    --accent-orange: 27 30% 15%;
+    --accent-pink: 327 30% 15%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  html {
+    @apply bg-background text-foreground;
+  }
+  
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+/* Toast animation */
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .gradient-primary {
+    @apply bg-gradient-to-br from-indigo-600 to-violet-600;
+  }
+  
+  .gradient-subtle {
+    @apply bg-gradient-to-br from-slate-50 to-slate-100;
+  }
+}

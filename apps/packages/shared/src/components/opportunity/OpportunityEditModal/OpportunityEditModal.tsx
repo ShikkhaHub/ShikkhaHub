@@ -1,0 +1,45 @@
+import React from 'react';
+
+import type { OpportunityEditInfoModalProps } from './OpportunityEditInfoModal';
+import { OpportunityEditInfoModal } from './OpportunityEditInfoModal';
+import type { OpportunityEditContentModalProps } from './OpportunityEditContentModal';
+import { OpportunityEditContentModal } from './OpportunityEditContentModal';
+import type { ModalProps } from '../../modals/common/Modal';
+import type { OpportunityEditQuestionModalProps } from './OpportunityEditQuestionModal';
+import { OpportunityEditQuestionModal } from './OpportunityEditQuestionModal';
+import type { OpportunityEditOrganizationModalProps } from './OpportunityEditOrganizationModal';
+import { OpportunityEditOrganizationModal } from './OpportunityEditOrganizationModal';
+import type { OpportunityEditRecruiterModalProps } from './OpportunityEditRecruiterModal';
+import { OpportunityEditRecruiterModal } from './OpportunityEditRecruiterModal';
+
+type PayloadMap = {
+  info: OpportunityEditInfoModalProps;
+  content: OpportunityEditContentModalProps;
+  question: OpportunityEditQuestionModalProps;
+  organization: OpportunityEditOrganizationModalProps;
+  recruiter: OpportunityEditRecruiterModalProps;
+};
+
+export type OpportunityEditModalProps = {
+  [K in keyof PayloadMap]: { type: K; payload: PayloadMap[K] };
+}[keyof PayloadMap] &
+  ModalProps;
+
+export const OpportunityEditModal = (props: OpportunityEditModalProps) => {
+  const { type, payload, ...rest } = props;
+
+  switch (type) {
+    case 'info':
+      return <OpportunityEditInfoModal {...rest} {...payload} />;
+    case 'content':
+      return <OpportunityEditContentModal {...rest} {...payload} />;
+    case 'question':
+      return <OpportunityEditQuestionModal {...rest} {...payload} />;
+    case 'organization':
+      return <OpportunityEditOrganizationModal {...rest} {...payload} />;
+    case 'recruiter':
+      return <OpportunityEditRecruiterModal {...rest} {...payload} />;
+    default:
+      return null;
+  }
+};

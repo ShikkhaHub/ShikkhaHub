@@ -1,0 +1,383 @@
+import type { ReactElement } from 'react';
+import React, { useCallback, useEffect } from 'react';
+import type { NextSeoProps } from 'next-seo';
+import type { WithClassNameProps } from '@shikkhahub/shared/src/components/utilities';
+import { PageWidgets } from '@shikkhahub/shared/src/components/utilities';
+import {
+  Button,
+  ButtonSize,
+  ButtonVariant,
+} from '@shikkhahub/shared/src/components/buttons/Button';
+import {
+  Typography,
+  TypographyType,
+} from '@shikkhahub/shared/src/components/typography/Typography';
+import {
+  coresDocsLink,
+  creatorsTermsOfService,
+  onboardingUrl,
+  webappUrl,
+} from '@shikkhahub/shared/src/lib/constants';
+import {
+  CoreIcon,
+  CreditCardIcon,
+  DocsIcon,
+  FeedbackIcon,
+  InfoIcon,
+  MinusIcon,
+  PlusIcon,
+} from '@shikkhahub/shared/src/components/icons';
+import { ListCardDivider } from '@shikkhahub/shared/src/components/cards/common/Card';
+import { WidgetContainer } from '@shikkhahub/shared/src/components/widgets/common';
+import { IconSize } from '@shikkhahub/shared/src/components/Icon';
+import classNames from 'classnames';
+import classed from '@shikkhahub/shared/src/lib/classed';
+
+import { LogEvent, Origin } from '@shikkhahub/shared/src/lib/log';
+import { useLogContext } from '@shikkhahub/shared/src/contexts/LogContext';
+import { useAuthContext } from '@shikkhahub/shared/src/contexts/AuthContext';
+import { formatCoresCurrency } from '@shikkhahub/shared/src/lib/utils';
+import {
+  getTransactionType,
+  getTransactionLabel,
+} from '@shikkhahub/shared/src/lib/transaction';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import {
+  generateQueryKey,
+  getNextPageParam,
+  RequestKey,
+  StaleTime,
+} from '@shikkhahub/shared/src/lib/query';
+import {
+  getTransactions,
+  getTransactionSummary,
+} from '@shikkhahub/shared/src/graphql/njord';
+import InfiniteScrolling from '@shikkhahub/shared/src/components/containers/InfiniteScrolling';
+import type { LogStartBuyingCreditsProps } from '@shikkhahub/shared/src/types';
+import { FeaturedCoresWidget } from '@shikkhahub/shared/src/components/cores/FeaturedCoresWidget';
+import { TransactionItem } from '@shikkhahub/shared/src/components/cores/TransactionItem';
+import { ElementPlaceholder } from '@shikkhahub/shared/src/components/ElementPlaceholder';
+import { useRouter } from 'next/router';
+import {
+  useCanPurchaseCores,
+  useHasAccessToCores,
+} from '@shikkhahub/shared/src/hooks/useCoresFeature';
+import { getPathnameWithQuery } from '@shikkhahub/shared/src/lib';
+import { Tooltip } from '@shikkhahub/shared/src/components/tooltip/Tooltip';
+import { getLayout as getFooterNavBarLayout } from '../components/layouts/FooterNavBarLayout';
+import { getLayout } from '../components/layouts/MainLayout';
+import ProtectedPage from '../components/ProtectedPage';
+import { getPageSeoTitles } from '../components/layouts/utils';
+
+type BalanceBlockProps = {
+  Icon: ReactElement;
+  title: string;
+  description: string;
+  balance: number;
+} & WithClassNameProps;
+const BalanceBlock = ({
+  Icon,
+  balance,
+  title,
+  description,
+  className,
+}: BalanceBlockProps): ReactElement => {
+  return (
+    <div
+      className={classNames(
+        'flex flex-1 flex-col rounded-14 border border-border-subtlest-tertiary p-4',
+        className,
+      )}
+    >
+      {Icon}
+      <Tooltip content={description}>
+        <div className="mt-4 flex gap-1">
+          <Typography type={TypographyType.Callout}>{title}</Typography>
+          <InfoIcon />
+        </div>
+      </Tooltip>
+      <Typography type={TypographyType.Title2} bold>
+        {formatCoresCurrency(balance)}
+      </Typography>
+    </div>
+  );
+};
+
+const Divider = classed('div', 'h-px w-full bg-border-subtlest-tertiary');
+
+const Wallet = (): ReactElement => {
+  const router = useRouter();
+  const { isLoggedIn, user, isAuthReady } = useAuthContext();
+  const { logEvent } = useLogContext();
+  const hasCoresAccess = useHasAccessToCores();
+  const canPurchaseCores = useCanPurchaseCores();
+
+  const onBuyCoresClick = useCallback(
+    ({
+      origin = Origin.WalletPageCTA,
+      amount,
+      target_id,
+    }: Partial<LogStartBuyingCreditsProps>) => {
+      logEvent({
+        event_name: LogEvent.StartBuyingCredits,
+        target_id,
+        extra: JSON.stringify({ origin, quantity: amount }),
+      });
+    },
+    [logEvent],
+  );
+
+  const { data: transactionSummary } = useQuery({
+    queryKey: generateQueryKey(RequestKey.Transactions, user, 'summary'),
+    queryFn: getTransactionSummary,
+    enabled: isLoggedIn,
+    staleTime: StaleTime.Default,
+  });
+
+  const transactionsQuery = useInfiniteQuery({
+    queryKey: generateQueryKey(RequestKey.Transactions, user, 'list', {
+      first: 20,
+    }),
+    queryFn: async ({ queryKey, pageParam }) => {
+      const [, , , queryVariables] = queryKey as [
+        RequestKey.Transactions,
+        string,
+        'list',
+        { first: number },
+      ];
+
+      return getTransactions({ ...queryVariables, after: pageParam });
+    },
+    initialPageParam: '',
+    getNextPageParam: (data, allPages, lastPageParam) => {
+      const nextPageparam = getNextPageParam(data?.pageInfo);
+
+      if (lastPageParam === nextPageparam) {
+        return null;
+      }
+
+      return getNextPageParam(data?.pageInfo);
+    },
+    enabled: isLoggedIn,
+    staleTime: StaleTime.Default,
+  });
+
+  const { data: transactions, isPending: isPendingTransactions } =
+    transactionsQuery;
+
+  const hasTransactions = (transactions?.pages?.[0]?.edges?.length || 0) > 0;
+  const isPageReady = router?.isReady && isAuthReady;
+
+  useEffect(() => {
+    if (!isPageReady) {
+      return;
+    }
+    if (hasCoresAccess) {
+      return;
+    }
+
+    router.push(user ? webappUrl : onboardingUrl);
+  }, [isPageReady, router, user, hasCoresAccess]);
+
+  if (!user || !isPageReady || !hasCoresAccess) {
+    return null;
+  }
+
+  return (
+    <ProtectedPage>
+      <div className="m-auto flex w-full max-w-screen-laptop flex-col pb-12 tablet:pb-0 laptop:min-h-page laptop:flex-row laptop:border-l laptop:border-r laptop:border-border-subtlest-tertiary laptop:pb-6 laptopL:pb-0">
+        <main className="relative flex flex-1 flex-col tablet:border-r tablet:border-border-subtlest-tertiary">
+          <header className="flex items-center justify-between border-b border-border-subtlest-tertiary px-4 py-2">
+            <Typography type={TypographyType.Title3} bold>
+              Core wallet
+            </Typography>
+            {canPurchaseCores && (
+              <Button
+                size={ButtonSize.Small}
+                variant={ButtonVariant.Primary}
+                onClick={() => onBuyCoresClick({ target_id: 'Buy Cores' })}
+                tag="a"
+                href={getPathnameWithQuery(
+                  `${webappUrl}cores`,
+                  new URLSearchParams({
+                    origin: Origin.WalletPageCTA,
+                  }),
+                )}
+              >
+                Buy Cores
+              </Button>
+            )}
+          </header>
+          <div className="flex flex-col gap-6 p-6">
+            <section className="flex w-full flex-wrap gap-4">
+              <BalanceBlock
+                Icon={<CoreIcon size={IconSize.Small} />}
+                title="Balance"
+                description="Your current balance"
+                balance={user.balance.amount}
+              />
+              <BalanceBlock
+                Icon={
+                  <div className="size-6 rounded-10 bg-action-bookmark-float text-accent-bun-default">
+                    <CreditCardIcon size={IconSize.Small} />
+                  </div>
+                }
+                title="Purchased"
+                description="Amount of cores you have purchased"
+                balance={transactionSummary?.purchased || 0}
+              />
+              <BalanceBlock
+                Icon={
+                  <div className="size-6 rounded-10 bg-action-upvote-float text-accent-avocado-default">
+                    <PlusIcon size={IconSize.Small} />
+                  </div>
+                }
+                title="Received"
+                description="Amount of cores you have received"
+                balance={transactionSummary?.received || 0}
+              />
+              <BalanceBlock
+                Icon={
+                  <div className="size-6 rounded-10 bg-action-downvote-float text-accent-ketchup-default">
+                    <MinusIcon size={IconSize.Small} />
+                  </div>
+                }
+                title="Spent"
+                description="Amount of cores you have spent"
+                balance={transactionSummary?.spent || 0}
+              />
+            </section>
+            <Divider />
+            <section className="flex w-full flex-col gap-6">
+              <Typography type={TypographyType.Body} bold>
+                Transaction history
+              </Typography>
+              {isPendingTransactions && (
+                <div className="flex flex-1 flex-col gap-4">
+                  {new Array(5).fill(null).map((_, index) => {
+                    return (
+                      <ElementPlaceholder
+                        // eslint-disable-next-line react/no-array-index-key
+                        key={index}
+                        className="h-10 w-full rounded-10"
+                      />
+                    );
+                  })}
+                </div>
+              )}
+              {!isPendingTransactions && (
+                <>
+                  {!hasTransactions && (
+                    <Typography type={TypographyType.Callout}>
+                      You have no transactions yet.
+                    </Typography>
+                  )}
+                  {hasTransactions && (
+                    <InfiniteScrolling
+                      isFetchingNextPage={transactionsQuery.isFetchingNextPage}
+                      canFetchMore={transactionsQuery.hasNextPage}
+                      fetchNextPage={transactionsQuery.fetchNextPage}
+                    >
+                      <ul className="flex flex-col gap-4">
+                        {transactions?.pages.map((page) => {
+                          return page.edges.map((edge) => {
+                            const { node: transaction } = edge;
+
+                            const type = getTransactionType({
+                              transaction,
+                              user,
+                            });
+
+                            return (
+                              <TransactionItem
+                                key={transaction.id}
+                                type={type}
+                                user={
+                                  type === 'receive'
+                                    ? transaction.sender
+                                    : transaction.receiver
+                                }
+                                amount={
+                                  type === 'send'
+                                    ? -transaction.value
+                                    : transaction.valueIncFees
+                                }
+                                date={new Date(transaction.createdAt)}
+                                label={getTransactionLabel({
+                                  transaction,
+                                  user,
+                                })}
+                                extraLabel={
+                                  transaction?.sourceName
+                                    ? `${transaction.sourceName} Squad`
+                                    : undefined
+                                }
+                              />
+                            );
+                          });
+                        })}
+                      </ul>
+                    </InfiniteScrolling>
+                  )}
+                </>
+              )}
+            </section>
+          </div>
+        </main>
+        <PageWidgets className="flex gap-4 py-4">
+          {canPurchaseCores && (
+            <FeaturedCoresWidget
+              className="hidden laptop:flex"
+              origin={Origin.WalletPagePackage}
+              onClick={onBuyCoresClick}
+              amounts={[100, 300, 600]}
+            />
+          )}
+          <WidgetContainer className="flex flex-col">
+            <div className="flex justify-around p-4">
+              <Button
+                tag="a"
+                target="_blank"
+                rel="noopener"
+                href={coresDocsLink}
+                icon={<FeedbackIcon />}
+                variant={ButtonVariant.Tertiary}
+                size={ButtonSize.Small}
+              >
+                Docs
+              </Button>
+              <ListCardDivider className="mx-3" />
+              <Button
+                tag="a"
+                target="_blank"
+                rel="noopener"
+                href={creatorsTermsOfService}
+                icon={<DocsIcon />}
+                variant={ButtonVariant.Tertiary}
+                size={ButtonSize.Small}
+              >
+                Terms
+              </Button>
+            </div>
+          </WidgetContainer>
+        </PageWidgets>
+      </div>
+    </ProtectedPage>
+  );
+};
+
+const getWalletLayout: typeof getLayout = (...props) =>
+  getFooterNavBarLayout(getLayout(...props));
+
+const seo: NextSeoProps = {
+  ...getPageSeoTitles('Core Wallet'),
+  description:
+    'Manage your Core Wallet on daily.dev. Check your balance, track activity, and buy Cores to support developers and power the community.',
+  nofollow: true,
+  noindex: true,
+};
+
+Wallet.getLayout = getWalletLayout;
+Wallet.layoutProps = { seo, screenCentered: false };
+
+export default Wallet;

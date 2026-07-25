@@ -1,0 +1,145 @@
+import type { ReactElement } from 'react';
+import React, { useMemo } from 'react';
+import { AboutMe } from '@shikkhahub/shared/src/features/profile/components/AboutMe';
+import { Activity } from '@shikkhahub/shared/src/features/profile/components/Activity';
+import { useProfile } from '@shikkhahub/shared/src/hooks/profile/useProfile';
+import { useActions, useJoinReferral } from '@shikkhahub/shared/src/hooks';
+import { NextSeo } from 'next-seo';
+import type { NextSeoProps } from 'next-seo/lib/types';
+import ProfileHeader from '@shikkhahub/shared/src/components/profile/ProfileHeader';
+import { AutofillProfileBanner } from '@shikkhahub/shared/src/features/profile/components/AutofillProfileBanner';
+import { ProfileUserExperiences } from '@shikkhahub/shared/src/features/profile/components/experience/ProfileUserExperiences';
+import { ProfileAchievementShowcase } from '@shikkhahub/shared/src/features/profile/components/achievements/ProfileAchievementShowcase';
+import { ProfileUserStack } from '@shikkhahub/shared/src/features/profile/components/stack/ProfileUserStack';
+import { ProfileUserHotTakes } from '@shikkhahub/shared/src/features/profile/components/hotTakes/ProfileUserHotTakes';
+import { ProfileUserWorkspacePhotos } from '@shikkhahub/shared/src/features/profile/components/workspacePhotos/ProfileUserWorkspacePhotos';
+import { useUploadCv } from '@shikkhahub/shared/src/features/profile/hooks/useUploadCv';
+import { ActionType } from '@shikkhahub/shared/src/graphql/actions';
+import { ProfileWidgets } from '@shikkhahub/shared/src/features/profile/components/ProfileWidgets/ProfileWidgets';
+import {
+  TypographyType,
+  TypographyTag,
+  TypographyColor,
+  Typography,
+} from '@shikkhahub/shared/src/components/typography/Typography';
+import { useDynamicHeader } from '@shikkhahub/shared/src/useDynamicHeader';
+import { Header } from '@shikkhahub/shared/src/components/profile/Header';
+import classNames from 'classnames';
+import { ProfileCompletion } from '@shikkhahub/shared/src/features/profile/components/ProfileWidgets/ProfileCompletion';
+import { Share } from '@shikkhahub/shared/src/features/profile/components/ProfileWidgets/Share';
+import { useRouter } from 'next/router';
+import { useProfileCompletionIndicator } from '@shikkhahub/shared/src/hooks/profile/useProfileCompletionIndicator';
+import {
+  getLayout as getProfileLayout,
+  getProfileSeoDefaults,
+  getStaticPaths as getProfileStaticPaths,
+  getStaticProps as getProfileStaticProps,
+} from '../../components/layouts/ProfileLayout';
+import type { ProfileLayoutProps } from '../../components/layouts/ProfileLayout';
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const ProfilePage = ({
+  user: initialUser,
+  noindex,
+  userStats,
+  sources,
+}: ProfileLayoutProps): ReactElement => {
+  useJoinReferral();
+  const router = useRouter();
+  const { status, onUpload, shouldShow } = useUploadCv();
+  const { checkHasCompleted } = useActions();
+  const hasClosedBanner = useMemo(
+    () => checkHasCompleted(ActionType.ClosedProfileBanner),
+    [checkHasCompleted],
+  );
+  const { showIndicator: showProfileCompletion } =
+    useProfileCompletionIndicator();
+
+  const { user, isUserSame: isUserSameBase } = useProfile(initialUser);
+
+  // Check if preview mode is enabled via query param
+  const isPreviewMode = router.query.preview === 'true';
+
+  // When in preview mode, act as a visitor (not same user)
+  const isSameUser = useMemo(
+    () => isUserSameBase && !isPreviewMode,
+    [isUserSameBase, isPreviewMode],
+  );
+
+  const { ref: stickyRef, progress: stickyProgress } =
+    useDynamicHeader<HTMLDivElement>(true);
+  const hideSticky = !stickyProgress;
+
+  const seo: NextSeoProps = {
+    ...getProfileSeoDefaults(user, {}, noindex),
+  };
+
+  const shouldShowBanner = isSameUser && shouldShow && !hasClosedBanner;
+
+  return (
+    <div className="rounded-16 border border-t-0 border-border-subtlest-tertiary laptop:border-t">
+      <NextSeo {...seo} />
+      <Header
+        user={user}
+        isSameUser={isSameUser}
+        sticky={!hideSticky}
+        className={classNames(
+          'left-0 top-0 z-3 w-full bg-background-default transition-all duration-75 laptop:hidden',
+          !hideSticky ? 'fixed tablet:pl-20' : 'relative',
+        )}
+      />
+      {isSameUser && showProfileCompletion && (
+        <ProfileCompletion className="laptop:hidden" />
+      )}
+      <div ref={stickyRef} />
+      <ProfileHeader
+        user={user}
+        userStats={userStats}
+        isSameUser={isSameUser}
+        isPreviewMode={isPreviewMode}
+      />
+      <div className="flex flex-col divide-y divide-border-subtlest-tertiary p-6">
+        {shouldShowBanner && (
+          <AutofillProfileBanner
+            onUpload={onUpload}
+            isLoading={status === 'pending'}
+          />
+        )}
+        {!shouldShowBanner && <div />}
+        <AboutMe user={user} />
+        <ProfileAchievementShowcase user={user} />
+        <ProfileUserStack user={user} />
+        <ProfileUserHotTakes user={user} />
+        <ProfileUserWorkspacePhotos user={user} />
+        <Activity user={user} />
+        {isSameUser && (
+          <Share permalink={user?.permalink} className="laptop:hidden" />
+        )}
+        <div className="py-4 laptop:hidden">
+          <Typography
+            type={TypographyType.Body}
+            tag={TypographyTag.H1}
+            color={TypographyColor.Primary}
+            bold
+            className="laptop:hidden"
+          >
+            Highlights
+          </Typography>
+          <ProfileWidgets
+            user={user}
+            userStats={userStats}
+            sources={sources}
+            className="no-scrollbar overflow-auto laptop:hidden"
+          />
+        </div>
+        <ProfileUserExperiences user={user} />
+      </div>
+    </div>
+  );
+};
+
+ProfilePage.getLayout = getProfileLayout;
+export default ProfilePage;
+
+export const getStaticProps = getProfileStaticProps;
+export const getStaticPaths = getProfileStaticPaths;

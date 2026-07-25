@@ -1,0 +1,1869 @@
+import { DataSource } from 'typeorm';
+import { Keyword, User } from '../../src/entity';
+import createOrGetConnection from '../../src/db';
+import {
+  disposeGraphQLTesting,
+  GraphQLTestClient,
+  GraphQLTestingState,
+  initializeGraphQLTesting,
+  MockContext,
+  saveFixtures,
+  testQueryErrorCode,
+} from '../helpers';
+import { usersFixture } from '../fixture/user';
+import { keywordsFixture } from '../fixture/keywords';
+import { Autocomplete, AutocompleteType } from '../../src/entity/Autocomplete';
+import { Company, CompanyType } from '../../src/entity/Company';
+import { DatasetLocation } from '../../src/entity/dataset/DatasetLocation';
+import type { MapboxResponse } from '../../src/integrations/mapbox/types';
+import nock from 'nock';
+
+let con: DataSource;
+let state: GraphQLTestingState;
+let client: GraphQLTestClient;
+let loggedUser: string = null;
+
+beforeAll(async () => {
+  con = await createOrGetConnection();
+  state = await initializeGraphQLTesting(
+    () => new MockContext(con, loggedUser),
+  );
+  client = state.client;
+});
+
+afterAll(() => disposeGraphQLTesting(state));
+
+beforeEach(async () => {
+  loggedUser = null;
+
+  await saveFixtures(con, User, usersFixture);
+
+  // Set up test autocomplete data
+  await saveFixtures(con, Autocomplete, [
+    {
+      value: 'Computer Science',
+      type: AutocompleteType.FieldOfStudy,
+      enabled: true,
+    },
+    {
+      value: 'Computer Engineering',
+      type: AutocompleteType.FieldOfStudy,
+      enabled: true,
+    },
+    {
+      value: 'Software Engineering',
+      type: AutocompleteType.FieldOfStudy,
+      enabled: true,
+    },
+    {
+      value: 'Data Science',
+      type: AutocompleteType.FieldOfStudy,
+      enabled: true,
+    },
+    {
+      value: 'Mechanical Engineering',
+      type: AutocompleteType.FieldOfStudy,
+      enabled: false, // Disabled, should not be returned
+    },
+    {
+      value: 'Bachelor of Science',
+      type: AutocompleteType.Degree,
+      enabled: true,
+    },
+    {
+      value: 'Master of Science',
+      type: AutocompleteType.Degree,
+      enabled: true,
+    },
+    {
+      value: 'Software Engineer',
+      type: AutocompleteType.Role,
+      enabled: true,
+    },
+    {
+      value: 'Senior Software Engineer',
+      type: AutocompleteType.Role,
+      enabled: true,
+    },
+    {
+      value: 'Data Engineer',
+      type: AutocompleteType.Role,
+      enabled: true,
+    },
+    {
+      value: 'Full Stack Developer',
+      type: AutocompleteType.Role,
+      enabled: true,
+    },
+  ]);
+});
+
+describe('query autocomplete', () => {
+  const QUERY = `
+    query Autocomplete($type: AutocompleteType!, $query: String!) {
+      autocomplete(type: $type, query: $query) {
+        result
+      }
+    }
+  `;
+
+  it('should return unauthenticated when not logged in', () =>
+    testQueryErrorCode(
+      client,
+      {
+        query: QUERY,
+        variables: { type: 'field_of_study', query: 'computer' },
+      },
+      'UNAUTHENTICATED',
+    ));
+
+  it('should return matching autocomplete results', async () => {
+    loggedUser = '1';
+
+    const res = await client.query(QUERY, {
+      variables: { type: 'field_of_study', query: 'computer' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocomplete.result).toEqual([
+      'Computer Engineering',
+      'Computer Science',
+    ]);
+  });
+
+  it('should filter by type', async () => {
+    loggedUser = '1';
+
+    const res = await client.query(QUERY, {
+      variables: { type: 'degree', query: 'science' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocomplete.result).toEqual([
+      'Bachelor of Science',
+      'Master of Science',
+    ]);
+  });
+
+  it('should be case insensitive', async () => {
+    loggedUser = '1';
+
+    const res = await client.query(QUERY, {
+      variables: { type: 'field_of_study', query: 'COMPUTER' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocomplete.result).toEqual([
+      'Computer Engineering',
+      'Computer Science',
+    ]);
+  });
+
+  it('should not return disabled autocompletes', async () => {
+    loggedUser = '1';
+
+    const res = await client.query(QUERY, {
+      variables: { type: 'field_of_study', query: 'mechanical' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocomplete.result).toEqual([]);
+  });
+
+  it('should return results in alphabetical order', async () => {
+    loggedUser = '1';
+
+    const res = await client.query(QUERY, {
+      variables: { type: 'role', query: 'engineer' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocomplete.result).toEqual([
+      'Data Engineer',
+      'Senior Software Engineer',
+      'Software Engineer',
+    ]);
+  });
+
+  it('should return empty array when no matches found', async () => {
+    loggedUser = '1';
+
+    const res = await client.query(QUERY, {
+      variables: { type: 'field_of_study', query: 'nonexistent' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocomplete.result).toEqual([]);
+  });
+
+  it('should return all results when query matches many items', async () => {
+    loggedUser = '1';
+
+    const res = await client.query(QUERY, {
+      variables: { type: 'field_of_study', query: 'science' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocomplete.result).toEqual([
+      'Computer Science',
+      'Data Science',
+    ]);
+  });
+
+  it('should match partial strings anywhere in the value', async () => {
+    loggedUser = '1';
+
+    const res = await client.query(QUERY, {
+      variables: { type: 'role', query: 'software' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocomplete.result).toEqual([
+      'Senior Software Engineer',
+      'Software Engineer',
+    ]);
+  });
+
+  it('should handle queries with spaces', async () => {
+    loggedUser = '1';
+
+    const res = await client.query(QUERY, {
+      variables: { type: 'role', query: 'full stack' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocomplete.result).toEqual(['Full Stack Developer']);
+  });
+
+  it('should return empty array for queries with emojis', async () => {
+    loggedUser = '1';
+
+    const res = await client.query(QUERY, {
+      variables: { type: 'role', query: '🚀' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocomplete.result).toEqual([]);
+  });
+
+  it('should return error for empty string query', async () => {
+    loggedUser = '1';
+
+    const res = await client.query(QUERY, {
+      variables: { type: 'role', query: '' },
+    });
+
+    expect(res.errors).toBeTruthy();
+  });
+
+  it('should return error for query with only spaces', async () => {
+    loggedUser = '1';
+
+    const res = await client.query(QUERY, {
+      variables: { type: 'role', query: '   ' },
+    });
+
+    expect(res.errors).toBeTruthy();
+  });
+
+  it('should return empty array for query with only special characters', async () => {
+    loggedUser = '1';
+
+    const res = await client.query(QUERY, {
+      variables: { type: 'role', query: '!@#$%^&*()' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocomplete.result).toEqual([]);
+  });
+
+  it('should handle very long query strings', async () => {
+    loggedUser = '1';
+
+    const longQuery = 'a'.repeat(100);
+    const res = await client.query(QUERY, {
+      variables: { type: 'role', query: longQuery },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocomplete.result).toEqual([]);
+  });
+
+  it('should return error for invalid autocomplete type', async () => {
+    loggedUser = '1';
+
+    const res = await client.query(QUERY, {
+      variables: { type: 'invalid_type', query: 'test' },
+    });
+
+    expect(res.errors).toBeTruthy();
+  });
+});
+
+describe('query autocompleteKeywords', () => {
+  const QUERY = /* GraphQL */ `
+    query AutocompleteKeywords($query: String!, $limit: Int) {
+      autocompleteKeywords(query: $query, limit: $limit) {
+        keyword
+        title
+      }
+    }
+  `;
+
+  beforeEach(async () => {
+    await saveFixtures(con, Keyword, keywordsFixture);
+  });
+
+  it('should return autocomplete allowed keywords when not logged in', async () => {
+    const res = await client.query(QUERY, {
+      variables: {
+        query: 'dev',
+      },
+    });
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteKeywords).toEqual(
+      expect.arrayContaining([
+        { keyword: 'webdev', title: 'Web Development' },
+        { keyword: 'development', title: null },
+      ]),
+    );
+  });
+
+  it('should return autocomplete results', async () => {
+    loggedUser = '1';
+
+    const res = await client.query(QUERY, {
+      variables: {
+        query: 'dev',
+      },
+    });
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteKeywords).toEqual(
+      expect.arrayContaining([
+        { keyword: 'webdev', title: 'Web Development' },
+        { keyword: 'web-development', title: null },
+        { keyword: 'development', title: null },
+      ]),
+    );
+  });
+
+  it('should limit autocomplete results', async () => {
+    loggedUser = '1';
+
+    const res = await client.query(QUERY, {
+      variables: {
+        query: 'dev',
+        limit: 1,
+      },
+    });
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteKeywords).toEqual([
+      { keyword: 'development', title: null },
+    ]);
+  });
+});
+
+describe('query autocompleteLocation', () => {
+  const QUERY = /* GraphQL */ `
+    query AutocompleteLocation($query: String!) {
+      autocompleteLocation(query: $query) {
+        id
+        country
+        city
+        subdivision
+      }
+    }
+  `;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    nock.cleanAll();
+  });
+
+  it('should return unauthenticated when not logged in', () =>
+    testQueryErrorCode(
+      client,
+      {
+        query: QUERY,
+        variables: { query: 'new york' },
+      },
+      'UNAUTHENTICATED',
+    ));
+
+  it('should return locations from Mapbox API', async () => {
+    loggedUser = '1';
+
+    const mockMapboxResponse: MapboxResponse = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: {
+            coordinates: [-74.006, 40.7128],
+            type: 'Point',
+          },
+          properties: {
+            name: 'New York',
+            mapbox_id: 'place.nyc',
+            feature_type: 'place',
+            place_formatted: 'New York, New York, United States',
+            context: {
+              country: {
+                id: 'country.us',
+                name: 'United States',
+                country_code: 'US',
+                country_code_alpha_3: 'USA',
+              },
+              region: {
+                id: 'region.ny',
+                name: 'New York',
+                region_code: 'NY',
+                region_code_full: 'US-NY',
+              },
+            },
+            coordinates: {
+              latitude: 40.7128,
+              longitude: -74.006,
+            },
+            language: 'en',
+            maki: 'marker',
+            metadata: {},
+          },
+        },
+      ],
+      attribution: 'Mapbox',
+      response_id: 'test-response-id',
+    };
+
+    // Mock the Mapbox API response
+    nock('https://api.mapbox.com')
+      .get('/search/geocode/v6/forward')
+      .query({
+        q: 'new york',
+        types: 'country,region,place',
+        limit: 5,
+        access_token: process.env.MAPBOX_ACCESS_TOKEN,
+      })
+      .reply(200, mockMapboxResponse);
+
+    const res = await client.query(QUERY, {
+      variables: { query: 'new york' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteLocation).toEqual([
+      {
+        id: 'place.nyc',
+        country: 'United States',
+        city: 'New York',
+        subdivision: 'New York',
+      },
+    ]);
+
+    expect(nock.isDone()).toBe(true);
+  });
+
+  it('should handle countries without cities', async () => {
+    loggedUser = '1';
+
+    const mockMapboxResponse: MapboxResponse = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: {
+            coordinates: [0, 0],
+            type: 'Point',
+          },
+          properties: {
+            name: 'United States',
+            mapbox_id: 'country.us',
+            feature_type: 'country',
+            place_formatted: 'United States',
+            context: {
+              country: {
+                id: 'country.us',
+                name: 'United States',
+                country_code: 'US',
+                country_code_alpha_3: 'USA',
+              },
+            },
+            coordinates: {
+              latitude: 0,
+              longitude: 0,
+            },
+            language: 'en',
+            maki: 'marker',
+            metadata: {},
+          },
+        },
+      ],
+      attribution: 'Mapbox',
+      response_id: 'test-response-id',
+    };
+
+    // Mock the Mapbox API response
+    nock('https://api.mapbox.com')
+      .get('/search/geocode/v6/forward')
+      .query({
+        q: 'united states',
+        types: 'country,region,place',
+        limit: 5,
+        access_token: process.env.MAPBOX_ACCESS_TOKEN,
+      })
+      .reply(200, mockMapboxResponse);
+
+    const res = await client.query(QUERY, {
+      variables: { query: 'united states' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteLocation).toEqual([
+      {
+        id: 'country.us',
+        country: 'United States',
+        city: null,
+        subdivision: null,
+      },
+    ]);
+  });
+
+  it('should handle multiple results from Mapbox', async () => {
+    loggedUser = '1';
+
+    const mockMapboxResponse: MapboxResponse = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: {
+            coordinates: [-122.4194, 37.7749],
+            type: 'Point',
+          },
+          properties: {
+            name: 'San Francisco',
+            mapbox_id: 'place.sf',
+            feature_type: 'place',
+            place_formatted: 'San Francisco, California, United States',
+            context: {
+              country: {
+                id: 'country.us',
+                name: 'United States',
+                country_code: 'US',
+                country_code_alpha_3: 'USA',
+              },
+              region: {
+                id: 'region.ca',
+                name: 'California',
+                region_code: 'CA',
+                region_code_full: 'US-CA',
+              },
+            },
+            coordinates: {
+              latitude: 37.7749,
+              longitude: -122.4194,
+            },
+            language: 'en',
+            maki: 'marker',
+            metadata: {},
+          },
+        },
+        {
+          type: 'Feature',
+          geometry: {
+            coordinates: [-118.2437, 34.0522],
+            type: 'Point',
+          },
+          properties: {
+            name: 'San Diego',
+            mapbox_id: 'place.sd',
+            feature_type: 'place',
+            place_formatted: 'San Diego, California, United States',
+            context: {
+              country: {
+                id: 'country.us',
+                name: 'United States',
+                country_code: 'US',
+                country_code_alpha_3: 'USA',
+              },
+              region: {
+                id: 'region.ca',
+                name: 'California',
+                region_code: 'CA',
+                region_code_full: 'US-CA',
+              },
+            },
+            coordinates: {
+              latitude: 34.0522,
+              longitude: -118.2437,
+            },
+            language: 'en',
+            maki: 'marker',
+            metadata: {},
+          },
+        },
+      ],
+      attribution: 'Mapbox',
+      response_id: 'test-response-id',
+    };
+
+    // Mock the Mapbox API response
+    nock('https://api.mapbox.com')
+      .get('/search/geocode/v6/forward')
+      .query({
+        q: 'san',
+        types: 'country,region,place',
+        limit: 5,
+        access_token: process.env.MAPBOX_ACCESS_TOKEN,
+      })
+      .reply(200, mockMapboxResponse);
+
+    const res = await client.query(QUERY, {
+      variables: { query: 'san' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteLocation).toHaveLength(2);
+    expect(res.data.autocompleteLocation).toEqual([
+      {
+        id: 'place.sf',
+        country: 'United States',
+        city: 'San Francisco',
+        subdivision: 'California',
+      },
+      {
+        id: 'place.sd',
+        country: 'United States',
+        city: 'San Diego',
+        subdivision: 'California',
+      },
+    ]);
+  });
+
+  it('should return empty array when Mapbox API fails', async () => {
+    loggedUser = '1';
+
+    // Mock the Mapbox API to return an error
+    nock('https://api.mapbox.com')
+      .get('/search/geocode/v6/forward')
+      .query({
+        q: 'test',
+        types: 'country,region,place',
+        limit: 5,
+        access_token: process.env.MAPBOX_ACCESS_TOKEN,
+      })
+      .reply(500, 'Internal Server Error');
+
+    const res = await client.query(QUERY, {
+      variables: { query: 'test' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteLocation).toEqual([]);
+  });
+
+  it('should return empty array when Mapbox returns no features', async () => {
+    loggedUser = '1';
+
+    const mockMapboxResponse: MapboxResponse = {
+      type: 'FeatureCollection',
+      features: [],
+      attribution: 'Mapbox',
+      response_id: 'test-response-id',
+    };
+
+    // Mock the Mapbox API response
+    nock('https://api.mapbox.com')
+      .get('/search/geocode/v6/forward')
+      .query({
+        q: 'nonexistentlocation',
+        types: 'country,region,place',
+        limit: 5,
+        access_token: process.env.MAPBOX_ACCESS_TOKEN,
+      })
+      .reply(200, mockMapboxResponse);
+
+    const res = await client.query(QUERY, {
+      variables: { query: 'nonexistentlocation' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteLocation).toEqual([]);
+  });
+
+  it('should handle API network errors gracefully', async () => {
+    loggedUser = '1';
+
+    // Mock a network error
+    nock('https://api.mapbox.com')
+      .get('/search/geocode/v6/forward')
+      .query({
+        q: 'test',
+        types: 'country,region,place',
+        limit: 5,
+        access_token: process.env.MAPBOX_ACCESS_TOKEN,
+      })
+      .replyWithError('Network error');
+
+    const res = await client.query(QUERY, {
+      variables: { query: 'test' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteLocation).toEqual([]);
+  });
+
+  it('should handle missing subdivision', async () => {
+    loggedUser = '1';
+
+    const mockMapboxResponse: MapboxResponse = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: {
+            coordinates: [13.405, 52.52],
+            type: 'Point',
+          },
+          properties: {
+            name: 'Berlin',
+            mapbox_id: 'place.berlin',
+            feature_type: 'place',
+            place_formatted: 'Berlin, Germany',
+            context: {
+              country: {
+                id: 'country.de',
+                name: 'Germany',
+                country_code: 'DE',
+                country_code_alpha_3: 'DEU',
+              },
+              // No region data
+            },
+            coordinates: {
+              latitude: 52.52,
+              longitude: 13.405,
+            },
+            language: 'en',
+            maki: 'marker',
+            metadata: {},
+          },
+        },
+      ],
+      attribution: 'Mapbox',
+      response_id: 'test-response-id',
+    };
+
+    // Mock the Mapbox API response
+    nock('https://api.mapbox.com')
+      .get('/search/geocode/v6/forward')
+      .query({
+        q: 'berlin',
+        types: 'country,region,place',
+        limit: 5,
+        access_token: process.env.MAPBOX_ACCESS_TOKEN,
+      })
+      .reply(200, mockMapboxResponse);
+
+    const res = await client.query(QUERY, {
+      variables: { query: 'berlin' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteLocation).toEqual([
+      {
+        id: 'place.berlin',
+        country: 'Germany',
+        city: 'Berlin',
+        subdivision: null,
+      },
+    ]);
+  });
+
+  it('should encode special characters in query', async () => {
+    loggedUser = '1';
+
+    const mockMapboxResponse: MapboxResponse = {
+      type: 'FeatureCollection',
+      features: [],
+      attribution: 'Mapbox',
+      response_id: 'test-response-id',
+    };
+
+    // Mock the Mapbox API response
+    // Note: nock automatically handles URL encoding
+    nock('https://api.mapbox.com')
+      .get('/search/geocode/v6/forward')
+      .query({
+        q: 'San Francisco, CA',
+        types: 'country,region,place',
+        limit: 5,
+        access_token: process.env.MAPBOX_ACCESS_TOKEN,
+      })
+      .reply(200, mockMapboxResponse);
+
+    const res = await client.query(QUERY, {
+      variables: { query: 'San Francisco, CA' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteLocation).toEqual([]);
+  });
+
+  describe('internal dataset', () => {
+    const QUERY_WITH_DATASET = /* GraphQL */ `
+      query AutocompleteLocation(
+        $query: String!
+        $dataset: LocationDataset
+        $limit: Int
+      ) {
+        autocompleteLocation(query: $query, dataset: $dataset, limit: $limit) {
+          id
+          country
+          city
+          subdivision
+        }
+      }
+    `;
+
+    beforeEach(async () => {
+      await saveFixtures(con, DatasetLocation, [
+        {
+          id: '550e8400-e29b-41d4-a716-446655440001',
+          country: 'United States',
+          subdivision: 'California',
+          city: 'San Francisco',
+          iso2: 'US',
+          iso3: 'USA',
+          externalId: 'usa1',
+        },
+        {
+          id: '550e8400-e29b-41d4-a716-446655440002',
+          country: 'United States',
+          subdivision: 'New York',
+          city: 'New York City',
+          iso2: 'US',
+          iso3: 'USA',
+          externalId: 'usa2',
+        },
+        {
+          id: '550e8400-e29b-41d4-a716-446655440003',
+          country: 'Germany',
+          subdivision: 'Bavaria',
+          city: 'Munich',
+          iso2: 'DE',
+          iso3: 'DEU',
+          externalId: 'de1',
+        },
+        {
+          id: '550e8400-e29b-41d4-a716-446655440004',
+          country: 'Germany',
+          subdivision: null,
+          city: 'Berlin',
+          iso2: 'DE',
+          iso3: 'DEU',
+          externalId: 'de2',
+        },
+        {
+          id: '550e8400-e29b-41d4-a716-446655440005',
+          country: 'United Kingdom',
+          subdivision: null,
+          city: null,
+          iso2: 'GB',
+          iso3: 'GBR',
+          externalId: 'uk1',
+        },
+        {
+          id: '550e8400-e29b-41d4-a716-446655440006',
+          country: 'United States',
+          subdivision: null,
+          city: null,
+          iso2: 'US',
+          iso3: 'USA',
+          externalId: 'usa-country',
+        },
+      ]);
+    });
+
+    it('should return locations from internal database when dataset is internal', async () => {
+      loggedUser = '1';
+
+      const res = await client.query(QUERY_WITH_DATASET, {
+        variables: { query: 'san francisco', dataset: 'internal' },
+      });
+
+      expect(res.errors).toBeFalsy();
+      expect(res.data.autocompleteLocation).toEqual([
+        {
+          id: 'usa1',
+          country: 'United States',
+          city: 'San Francisco',
+          subdivision: 'California',
+        },
+      ]);
+    });
+
+    it('should match by country name', async () => {
+      loggedUser = '1';
+
+      const res = await client.query(QUERY_WITH_DATASET, {
+        variables: { query: 'germany', dataset: 'internal' },
+      });
+
+      expect(res.errors).toBeFalsy();
+      expect(res.data.autocompleteLocation).toHaveLength(2);
+      // Note: ORDER BY subdivision ASC NULLS FIRST puts null values before non-null
+      expect(res.data.autocompleteLocation).toEqual([
+        {
+          id: 'de2',
+          country: 'Germany',
+          city: 'Berlin',
+          subdivision: null,
+        },
+        {
+          id: 'de1',
+          country: 'Germany',
+          city: 'Munich',
+          subdivision: 'Bavaria',
+        },
+      ]);
+    });
+
+    it('should match by subdivision name', async () => {
+      loggedUser = '1';
+
+      const res = await client.query(QUERY_WITH_DATASET, {
+        variables: { query: 'california', dataset: 'internal' },
+      });
+
+      expect(res.errors).toBeFalsy();
+      expect(res.data.autocompleteLocation).toEqual([
+        {
+          id: 'usa1',
+          country: 'United States',
+          city: 'San Francisco',
+          subdivision: 'California',
+        },
+      ]);
+    });
+
+    it('should match by city name', async () => {
+      loggedUser = '1';
+
+      const res = await client.query(QUERY_WITH_DATASET, {
+        variables: { query: 'munich', dataset: 'internal' },
+      });
+
+      expect(res.errors).toBeFalsy();
+      expect(res.data.autocompleteLocation).toEqual([
+        {
+          id: 'de1',
+          country: 'Germany',
+          city: 'Munich',
+          subdivision: 'Bavaria',
+        },
+      ]);
+    });
+
+    it('should be case insensitive', async () => {
+      loggedUser = '1';
+
+      const res = await client.query(QUERY_WITH_DATASET, {
+        variables: { query: 'UNITED STATES', dataset: 'internal' },
+      });
+
+      expect(res.errors).toBeFalsy();
+      expect(res.data.autocompleteLocation).toHaveLength(3);
+    });
+
+    it('should prioritize country-level entries over city-level entries', async () => {
+      loggedUser = '1';
+
+      const res = await client.query(QUERY_WITH_DATASET, {
+        variables: { query: 'united states', dataset: 'internal' },
+      });
+
+      expect(res.errors).toBeFalsy();
+      // Country-level entry should appear first (null subdivision and city)
+      expect(res.data.autocompleteLocation[0]).toEqual({
+        id: 'usa-country',
+        country: 'United States',
+        city: null,
+        subdivision: null,
+      });
+      // Then city-level entries sorted alphabetically by subdivision
+      expect(res.data.autocompleteLocation[1].subdivision).toBe('California');
+      expect(res.data.autocompleteLocation[2].subdivision).toBe('New York');
+    });
+
+    it('should return empty array when no matches found', async () => {
+      loggedUser = '1';
+
+      const res = await client.query(QUERY_WITH_DATASET, {
+        variables: { query: 'nonexistent', dataset: 'internal' },
+      });
+
+      expect(res.errors).toBeFalsy();
+      expect(res.data.autocompleteLocation).toEqual([]);
+    });
+
+    it('should handle null subdivision and city', async () => {
+      loggedUser = '1';
+
+      const res = await client.query(QUERY_WITH_DATASET, {
+        variables: { query: 'united kingdom', dataset: 'internal' },
+      });
+
+      expect(res.errors).toBeFalsy();
+      expect(res.data.autocompleteLocation).toEqual([
+        {
+          id: 'uk1',
+          country: 'United Kingdom',
+          city: null,
+          subdivision: null,
+        },
+      ]);
+    });
+
+    it('should respect limit parameter', async () => {
+      loggedUser = '1';
+
+      const res = await client.query(QUERY_WITH_DATASET, {
+        variables: { query: 'united', dataset: 'internal', limit: 1 },
+      });
+
+      expect(res.errors).toBeFalsy();
+      expect(res.data.autocompleteLocation).toHaveLength(1);
+    });
+
+    it('should return Europe as a country', async () => {
+      loggedUser = '1';
+
+      await con.getRepository(DatasetLocation).save(
+        con.getRepository(DatasetLocation).create({
+          id: '550e8400-e29b-41d4-a716-446655440006',
+          continent: 'Europe',
+          country: null,
+          subdivision: null,
+          city: null,
+          iso2: null,
+          iso3: null,
+          externalId: 'eu1',
+        }),
+      );
+
+      const res = await client.query(QUERY_WITH_DATASET, {
+        variables: { query: 'europe', dataset: 'internal' },
+      });
+
+      expect(res.errors).toBeFalsy();
+      expect(res.data.autocompleteLocation).toEqual([
+        {
+          id: 'eu1',
+          country: 'Europe',
+          city: null,
+          subdivision: null,
+        },
+      ]);
+    });
+
+    it('should default to external (Mapbox) when dataset is not specified', async () => {
+      loggedUser = '1';
+
+      const mockMapboxResponse: MapboxResponse = {
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            geometry: {
+              coordinates: [-122.4194, 37.7749],
+              type: 'Point',
+            },
+            properties: {
+              name: 'San Francisco',
+              mapbox_id: 'place.sf',
+              feature_type: 'place',
+              place_formatted: 'San Francisco, California, United States',
+              context: {
+                country: {
+                  id: 'country.us',
+                  name: 'United States',
+                  country_code: 'US',
+                  country_code_alpha_3: 'USA',
+                },
+                region: {
+                  id: 'region.ca',
+                  name: 'California',
+                  region_code: 'CA',
+                  region_code_full: 'US-CA',
+                },
+              },
+              coordinates: {
+                latitude: 37.7749,
+                longitude: -122.4194,
+              },
+              language: 'en',
+              maki: 'marker',
+              metadata: {},
+            },
+          },
+        ],
+        attribution: 'Mapbox',
+        response_id: 'test-response-id',
+      };
+
+      nock('https://api.mapbox.com')
+        .get('/search/geocode/v6/forward')
+        .query({
+          q: 'san francisco',
+          types: 'country,region,place',
+          limit: 5,
+          access_token: process.env.MAPBOX_ACCESS_TOKEN,
+        })
+        .reply(200, mockMapboxResponse);
+
+      // Query without specifying dataset - should use Mapbox
+      const res = await client.query(QUERY_WITH_DATASET, {
+        variables: { query: 'san francisco' },
+      });
+
+      expect(res.errors).toBeFalsy();
+      // Should return Mapbox ID, not internal database ID
+      expect(res.data.autocompleteLocation[0].id).toBe('place.sf');
+    });
+  });
+});
+
+describe('query autocompleteCompany', () => {
+  const QUERY = /* GraphQL */ `
+    query AutocompleteCompany(
+      $query: String!
+      $limit: Int
+      $type: CompanyType
+    ) {
+      autocompleteCompany(query: $query, limit: $limit, type: $type) {
+        id
+        name
+        image
+      }
+    }
+  `;
+
+  beforeEach(async () => {
+    await saveFixtures(con, Company, [
+      {
+        id: 'google',
+        name: 'Google',
+        image: 'https://example.com/google.png',
+        domains: ['google.com', 'alphabet.com'],
+        type: CompanyType.Company,
+      },
+      {
+        id: 'microsoft',
+        name: 'Microsoft Corporation',
+        image: 'https://example.com/microsoft.png',
+        domains: ['microsoft.com'],
+        type: CompanyType.Company,
+      },
+      {
+        id: 'facebook',
+        name: 'Meta (Facebook)',
+        image: 'https://example.com/meta.png',
+        domains: ['facebook.com', 'meta.com'],
+        type: CompanyType.Company,
+      },
+      {
+        id: 'apple',
+        name: 'Apple Inc.',
+        image: 'https://example.com/apple.png',
+        domains: ['apple.com'],
+        type: CompanyType.Company,
+      },
+      {
+        id: 'amazon',
+        name: 'Amazon',
+        image: 'https://example.com/amazon.png',
+        domains: ['amazon.com'],
+        type: CompanyType.Company,
+      },
+      {
+        id: 'samsung',
+        name: 'Samsung Electronics',
+        altName: '삼성전자',
+        image: 'https://example.com/samsung.png',
+        domains: ['samsung.com'],
+        type: CompanyType.Company,
+      },
+      {
+        id: 'toyota',
+        name: 'Toyota Motor Corporation',
+        altName: 'トヨタ自動車',
+        image: 'https://example.com/toyota.png',
+        domains: ['toyota.com'],
+        type: CompanyType.Company,
+      },
+      {
+        id: 'mit',
+        name: 'Massachusetts Institute of Technology',
+        image: 'https://example.com/mit.png',
+        domains: ['mit.edu'],
+        type: CompanyType.School,
+      },
+      {
+        id: 'stanford',
+        name: 'Stanford University',
+        image: 'https://example.com/stanford.png',
+        domains: ['stanford.edu'],
+        type: CompanyType.School,
+      },
+      {
+        id: 'harvard',
+        name: 'Harvard University',
+        image: 'https://example.com/harvard.png',
+        domains: ['harvard.edu'],
+        type: CompanyType.School,
+      },
+      {
+        id: 'berkeley',
+        name: 'University of California, Berkeley',
+        image: 'https://example.com/berkeley.png',
+        domains: ['berkeley.edu'],
+        type: CompanyType.School,
+      },
+      {
+        id: 'todai',
+        name: 'The University of Tokyo',
+        altName: '東京大学',
+        image: 'https://example.com/todai.png',
+        domains: ['u-tokyo.ac.jp'],
+        type: CompanyType.School,
+      },
+    ]);
+  });
+
+  it('should be case insensitive', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: 'GOOGLE' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteCompany).toMatchObject([
+      {
+        id: 'google',
+        name: 'Google',
+        image: 'https://example.com/google.png',
+      },
+    ]);
+  });
+
+  it('should match partial strings', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: 'micro' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteCompany).toMatchObject([
+      {
+        id: 'microsoft',
+        name: 'Microsoft Corporation',
+        image: 'https://example.com/microsoft.png',
+      },
+    ]);
+  });
+
+  it('should match multiple records and return in alphabetical order', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: 'university' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteCompany).toMatchObject([
+      {
+        id: 'harvard',
+        name: 'Harvard University',
+        image: 'https://example.com/harvard.png',
+      },
+      {
+        id: 'stanford',
+        name: 'Stanford University',
+        image: 'https://example.com/stanford.png',
+      },
+      {
+        id: 'todai',
+        name: 'The University of Tokyo',
+        image: 'https://example.com/todai.png',
+      },
+      {
+        id: 'berkeley',
+        name: 'University of California, Berkeley',
+        image: 'https://example.com/berkeley.png',
+      },
+    ]);
+  });
+
+  it('should filter by company type', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: 'a', type: 'company' },
+    });
+
+    expect(res.errors).toBeFalsy();
+
+    // Should only return companies, not schools (alphabetically sorted)
+    expect(res.data.autocompleteCompany).toMatchObject([
+      {
+        id: 'amazon',
+        name: 'Amazon',
+        image: 'https://example.com/amazon.png',
+      },
+      {
+        id: 'apple',
+        name: 'Apple Inc.',
+        image: 'https://example.com/apple.png',
+      },
+      {
+        id: 'facebook',
+        name: 'Meta (Facebook)',
+        image: 'https://example.com/meta.png',
+      },
+      {
+        id: 'microsoft',
+        name: 'Microsoft Corporation',
+        image: 'https://example.com/microsoft.png',
+      },
+      {
+        id: 'samsung',
+        name: 'Samsung Electronics',
+        image: 'https://example.com/samsung.png',
+      },
+      {
+        id: 'toyota',
+        name: 'Toyota Motor Corporation',
+        image: 'https://example.com/toyota.png',
+      },
+    ]);
+  });
+
+  it('should filter by school type', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: 'a', type: 'school' },
+    });
+
+    expect(res.errors).toBeFalsy();
+
+    // Should only return schools, not companies (alphabetically sorted)
+    expect(res.data.autocompleteCompany).toMatchObject([
+      {
+        id: 'harvard',
+        name: 'Harvard University',
+        image: 'https://example.com/harvard.png',
+      },
+      {
+        id: 'mit',
+        name: 'Massachusetts Institute of Technology',
+        image: 'https://example.com/mit.png',
+      },
+      {
+        id: 'stanford',
+        name: 'Stanford University',
+        image: 'https://example.com/stanford.png',
+      },
+      {
+        id: 'berkeley',
+        name: 'University of California, Berkeley',
+        image: 'https://example.com/berkeley.png',
+      },
+    ]);
+  });
+
+  it('should return all types when type is not specified', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: 'a' },
+    });
+
+    expect(res.errors).toBeFalsy();
+
+    // Should return both companies and schools (alphabetically sorted)
+    expect(res.data.autocompleteCompany).toMatchObject([
+      {
+        id: 'amazon',
+        name: 'Amazon',
+        image: 'https://example.com/amazon.png',
+      },
+      {
+        id: 'apple',
+        name: 'Apple Inc.',
+        image: 'https://example.com/apple.png',
+      },
+      {
+        id: 'harvard',
+        name: 'Harvard University',
+        image: 'https://example.com/harvard.png',
+      },
+      {
+        id: 'mit',
+        name: 'Massachusetts Institute of Technology',
+        image: 'https://example.com/mit.png',
+      },
+      {
+        id: 'facebook',
+        name: 'Meta (Facebook)',
+        image: 'https://example.com/meta.png',
+      },
+      {
+        id: 'microsoft',
+        name: 'Microsoft Corporation',
+        image: 'https://example.com/microsoft.png',
+      },
+      {
+        id: 'samsung',
+        name: 'Samsung Electronics',
+        image: 'https://example.com/samsung.png',
+      },
+      {
+        id: 'stanford',
+        name: 'Stanford University',
+        image: 'https://example.com/stanford.png',
+      },
+      {
+        id: 'toyota',
+        name: 'Toyota Motor Corporation',
+        image: 'https://example.com/toyota.png',
+      },
+      {
+        id: 'berkeley',
+        name: 'University of California, Berkeley',
+        image: 'https://example.com/berkeley.png',
+      },
+    ]);
+  });
+
+  it('should respect limit parameter', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: 'a', limit: 2 },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteCompany.length).toBe(2);
+
+    // Should still be alphabetically sorted
+    expect(res.data.autocompleteCompany[0].name).toEqual('Amazon');
+  });
+
+  it('should use default limit of 20 when not specified', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: 'a' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    // Should return results but capped at default limit
+    expect(res.data.autocompleteCompany.length).toBeLessThanOrEqual(20);
+  });
+
+  it('should return empty array when no matches found', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: 'nonexistentcompany' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteCompany).toEqual([]);
+  });
+
+  it('should handle queries with spaces', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: 'of cali' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteCompany).toMatchObject([
+      {
+        id: 'berkeley',
+        name: 'University of California, Berkeley',
+        image: 'https://example.com/berkeley.png',
+      },
+    ]);
+  });
+
+  it('should handle queries that returns result with special characters', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: 'meta facebook' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteCompany).toMatchObject([
+      {
+        id: 'facebook',
+        name: 'Meta (Facebook)',
+        image: 'https://example.com/meta.png',
+      },
+    ]);
+  });
+
+  it('should handle queries with special characters', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: 'inc.' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteCompany).toMatchObject([
+      {
+        id: 'apple',
+        name: 'Apple Inc.',
+        image: 'https://example.com/apple.png',
+      },
+    ]);
+  });
+
+  it('should handle very long query strings', async () => {
+    const longQuery = 'a'.repeat(100);
+    const res = await client.query(QUERY, {
+      variables: { query: longQuery },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteCompany).toEqual([]);
+  });
+
+  it('should return error for invalid company type', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: 'test', type: 'invalid_type' },
+    });
+
+    expect(res.errors).toBeTruthy();
+  });
+
+  it('should return error for limit less than 1', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: 'test', limit: 0 },
+    });
+
+    expect(res.errors).toBeTruthy();
+  });
+
+  it('should return error for limit greater than 50', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: 'test', limit: 51 },
+    });
+
+    expect(res.errors).toBeTruthy();
+  });
+
+  it('should normalize query string (lowercase and trim)', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: '  GOOGLE  ' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteCompany).toMatchObject([
+      {
+        id: 'google',
+        name: 'Google',
+        image: 'https://example.com/google.png',
+      },
+    ]);
+  });
+
+  it('should return results when searching by English name for company with altName', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: 'samsung' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteCompany).toMatchObject([
+      {
+        id: 'samsung',
+        name: 'Samsung Electronics',
+        image: 'https://example.com/samsung.png',
+      },
+    ]);
+  });
+
+  it('should return results when searching by non-Latin characters (Korean)', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: '삼성' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteCompany).toMatchObject([
+      {
+        id: 'samsung',
+        name: 'Samsung Electronics',
+        image: 'https://example.com/samsung.png',
+      },
+    ]);
+  });
+
+  it('should return results when searching by non-Latin characters (Japanese)', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: 'トヨタ' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteCompany).toMatchObject([
+      {
+        id: 'toyota',
+        name: 'Toyota Motor Corporation',
+        image: 'https://example.com/toyota.png',
+      },
+    ]);
+  });
+
+  it('should not return unrelated companies when searching with non-Latin characters', async () => {
+    const res = await client.query(QUERY, {
+      variables: { query: '삼성' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    // Should only return Samsung, not other companies with non-Latin altNames
+    expect(res.data.autocompleteCompany.length).toBe(1);
+    expect(res.data.autocompleteCompany[0].id).toBe('samsung');
+  });
+});
+
+describe('query autocompleteGithubRepository', () => {
+  const QUERY = /* GraphQL */ `
+    query AutocompleteGithubRepository($query: String!, $limit: Int) {
+      autocompleteGithubRepository(query: $query, limit: $limit) {
+        id
+        fullName
+        url
+        image
+        description
+      }
+    }
+  `;
+
+  beforeEach(() => {
+    nock.cleanAll();
+  });
+
+  it('should return unauthenticated when not logged in', () =>
+    testQueryErrorCode(
+      client,
+      {
+        query: QUERY,
+        variables: { query: 'react' },
+      },
+      'UNAUTHENTICATED',
+    ));
+
+  it('should return GitHub repositories for a search query', async () => {
+    loggedUser = '1';
+
+    const mockGitHubResponse = {
+      total_count: 2,
+      items: [
+        {
+          id: 10270250,
+          full_name: 'facebook/react',
+          html_url: 'https://github.com/facebook/react',
+          description: 'The library for web and native user interfaces.',
+          owner: {
+            login: 'facebook',
+            avatar_url: 'https://avatars.githubusercontent.com/u/69631?v=4',
+          },
+        },
+        {
+          id: 75396575,
+          full_name: 'facebook/react-native',
+          html_url: 'https://github.com/facebook/react-native',
+          description:
+            'A framework for building native applications using React',
+          owner: {
+            login: 'facebook',
+            avatar_url: 'https://avatars.githubusercontent.com/u/69631?v=4',
+          },
+        },
+      ],
+    };
+
+    nock('https://api.github.com')
+      .get('/search/repositories')
+      .query({
+        q: 'react',
+        per_page: '10',
+        sort: 'stars',
+        order: 'desc',
+      })
+      .reply(200, mockGitHubResponse);
+
+    const res = await client.query(QUERY, {
+      variables: { query: 'react' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteGithubRepository).toMatchObject([
+      {
+        id: '10270250',
+        fullName: 'facebook/react',
+        url: 'https://github.com/facebook/react',
+        image: 'https://avatars.githubusercontent.com/u/69631?v=4',
+        description: 'The library for web and native user interfaces.',
+      },
+      {
+        id: '75396575',
+        fullName: 'facebook/react-native',
+        url: 'https://github.com/facebook/react-native',
+        image: 'https://avatars.githubusercontent.com/u/69631?v=4',
+        description: 'A framework for building native applications using React',
+      },
+    ]);
+    expect(nock.isDone()).toBe(true);
+  });
+
+  it('should respect the limit parameter', async () => {
+    loggedUser = '1';
+
+    const mockGitHubResponse = {
+      total_count: 1,
+      items: [
+        {
+          id: 10270250,
+          full_name: 'facebook/react',
+          html_url: 'https://github.com/facebook/react',
+          description: 'The library for web and native user interfaces.',
+          owner: {
+            login: 'facebook',
+            avatar_url: 'https://avatars.githubusercontent.com/u/69631?v=4',
+          },
+        },
+      ],
+    };
+
+    nock('https://api.github.com')
+      .get('/search/repositories')
+      .query({
+        q: 'react',
+        per_page: '5',
+        sort: 'stars',
+        order: 'desc',
+      })
+      .reply(200, mockGitHubResponse);
+
+    const res = await client.query(QUERY, {
+      variables: { query: 'react', limit: 5 },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteGithubRepository.length).toBe(1);
+    expect(nock.isDone()).toBe(true);
+  });
+
+  it('should return empty array when GitHub API returns no results', async () => {
+    loggedUser = '1';
+
+    const mockGitHubResponse = {
+      total_count: 0,
+      items: [],
+    };
+
+    nock('https://api.github.com')
+      .get('/search/repositories')
+      .query({
+        q: 'nonexistent-repo-name-xyz',
+        per_page: '10',
+        sort: 'stars',
+        order: 'desc',
+      })
+      .reply(200, mockGitHubResponse);
+
+    const res = await client.query(QUERY, {
+      variables: { query: 'nonexistent-repo-name-xyz' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteGithubRepository).toEqual([]);
+    expect(nock.isDone()).toBe(true);
+  });
+
+  it('should return empty array when GitHub API returns an error', async () => {
+    loggedUser = '1';
+
+    nock('https://api.github.com')
+      .get('/search/repositories')
+      .query({
+        q: 'react',
+        per_page: '10',
+        sort: 'stars',
+        order: 'desc',
+      })
+      .reply(500, { message: 'Internal Server Error' });
+
+    const res = await client.query(QUERY, {
+      variables: { query: 'react' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteGithubRepository).toEqual([]);
+  });
+
+  it('should handle repositories with null description', async () => {
+    loggedUser = '1';
+
+    const mockGitHubResponse = {
+      total_count: 1,
+      items: [
+        {
+          id: 12345678,
+          full_name: 'user/repo-without-description',
+          html_url: 'https://github.com/user/repo-without-description',
+          description: null,
+          owner: {
+            login: 'user',
+            avatar_url: 'https://avatars.githubusercontent.com/u/123?v=4',
+          },
+        },
+      ],
+    };
+
+    nock('https://api.github.com')
+      .get('/search/repositories')
+      .query({
+        q: 'repo-without-description',
+        per_page: '10',
+        sort: 'stars',
+        order: 'desc',
+      })
+      .reply(200, mockGitHubResponse);
+
+    const res = await client.query(QUERY, {
+      variables: { query: 'repo-without-description' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(res.data.autocompleteGithubRepository).toMatchObject([
+      {
+        id: '12345678',
+        fullName: 'user/repo-without-description',
+        url: 'https://github.com/user/repo-without-description',
+        image: 'https://avatars.githubusercontent.com/u/123?v=4',
+        description: null,
+      },
+    ]);
+    expect(nock.isDone()).toBe(true);
+  });
+
+  it('should URL encode special characters in query', async () => {
+    loggedUser = '1';
+
+    const mockGitHubResponse = {
+      total_count: 0,
+      items: [],
+    };
+
+    nock('https://api.github.com')
+      .get('/search/repositories')
+      .query({
+        q: 'test repo',
+        per_page: '10',
+        sort: 'stars',
+        order: 'desc',
+      })
+      .reply(200, mockGitHubResponse);
+
+    const res = await client.query(QUERY, {
+      variables: { query: 'test repo' },
+    });
+
+    expect(res.errors).toBeFalsy();
+    expect(nock.isDone()).toBe(true);
+  });
+});

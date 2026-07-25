@@ -1,0 +1,21 @@
+{
+  "name": "@shikkhahub/eslint-rules-plugin",
+  "version": "0.0.0",
+  "description": "> TODO: description",
+  "license": "ISC",
+  "main": "lib/index.js",
+  "directories": {
+    "lib": "lib",
+    "test": "__tests__"
+  },
+  "prettier": "@shikkhahub/prettier-config",
+  "devDependencies": {
+    "@shikkhahub/prettier-config": "workspace:*"
+  },
+  "files": [
+    "lib"
+  ],
+  "scripts": {
+    "test": "echo \"Error: run tests from root\" && exit 1"
+  }
+}

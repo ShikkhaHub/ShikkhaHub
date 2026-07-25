@@ -1,0 +1,1095 @@
+import React, { Fragment, useEffect, useRef, useState } from 'react';
+import type { ReactElement } from 'react';
+
+import type { NextSeoProps } from 'next-seo';
+import type { GetStaticPathsResult, GetStaticProps } from 'next';
+import { dehydrate, QueryClient, useQuery } from '@tanstack/react-query';
+import { useActions } from '@shikkhahub/shared/src/hooks';
+import { ActionType } from '@shikkhahub/shared/src/graphql/actions';
+import {
+  Typography,
+  TypographyColor,
+  TypographyTag,
+  TypographyType,
+} from '@shikkhahub/shared/src/components/typography/Typography';
+import { SourceAvatar } from '@shikkhahub/shared/src/components/profile/source';
+import {
+  ProfileImageSize,
+  ProfilePicture,
+  sizeClasses,
+} from '@shikkhahub/shared/src/components/ProfilePicture';
+import Link from '@shikkhahub/shared/src/components/utilities/Link';
+import {
+  Button,
+  ButtonIconPosition,
+  ButtonSize,
+  ButtonVariant,
+} from '@shikkhahub/shared/src/components/buttons/Button';
+import {
+  BlueskyIcon,
+  CodePenIcon,
+  CrunchbaseIcon,
+  FacebookIcon,
+  GitHubIcon,
+  GitLabIcon,
+  HashnodeIcon,
+  InfoIcon,
+  LinkedInIcon,
+  MagicIcon,
+  MastodonIcon,
+  MoveToIcon,
+  OpenLinkIcon,
+  RedditIcon,
+  RoadmapIcon,
+  StackOverflowIcon,
+  ThreadsIcon,
+  TwitterIcon,
+  YoutubeIcon,
+} from '@shikkhahub/shared/src/components/icons';
+import { GoBackButton } from '@shikkhahub/shared/src/components/post/GoBackHeaderMobile';
+import { anchorDefaultRel } from '@shikkhahub/shared/src/lib/strings';
+import { Chip } from '@shikkhahub/shared/src/components/cards/common/PostTags';
+import { FlexCol } from '@shikkhahub/shared/src/components/utilities';
+import { briefButtonBg } from '@shikkhahub/shared/src/styles/custom';
+import { IconSize } from '@shikkhahub/shared/src/components/Icon';
+import { Accordion } from '@shikkhahub/shared/src/components/accordion';
+import classNames from 'classnames';
+import { useRouter } from 'next/router';
+import ShowMoreContent from '@shikkhahub/shared/src/components/cards/common/ShowMoreContent';
+import {
+  opportunityByIdOptions,
+  opportunityMatchOptions,
+} from '@shikkhahub/shared/src/features/opportunity/queries';
+import {
+  Image,
+  ImageType,
+} from '@shikkhahub/shared/src/components/image/Image';
+import { apiUrl } from '@shikkhahub/shared/src/lib/config';
+import { JobPageIntro } from '@shikkhahub/shared/src/features/opportunity/components/JobPageIntro';
+import { ResponseButtons } from '@shikkhahub/shared/src/features/opportunity/components/ResponseButtons';
+import { ShowInterestButton } from '@shikkhahub/shared/src/features/opportunity/components/ShowInterestButton';
+import type {
+  Opportunity,
+  OpportunityMeta,
+  ContentSection,
+} from '@shikkhahub/shared/src/features/opportunity/types';
+import { OpportunityMatchStatus } from '@shikkhahub/shared/src/features/opportunity/types';
+import { LocationType } from '@shikkhahub/shared/src/features/opportunity/protobuf/util';
+import {
+  EmploymentType,
+  SalaryPeriod,
+  SeniorityLevel,
+} from '@shikkhahub/shared/src/features/opportunity/protobuf/opportunity';
+import { seniorityLevelMap } from '@shikkhahub/shared/src/features/opportunity/common';
+import {
+  CompanySize,
+  CompanyStage,
+} from '@shikkhahub/shared/src/features/opportunity/protobuf/organization';
+import { NoOpportunity } from '@shikkhahub/shared/src/features/opportunity/components/NoOpportunity';
+import { useLogContext } from '@shikkhahub/shared/src/contexts/LogContext';
+import { LogEvent } from '@shikkhahub/shared/src/lib/log';
+import { opportunityUrl } from '@shikkhahub/shared/src/lib/constants';
+import { locationToString } from '@shikkhahub/shared/src/lib/utils';
+import { OpportunityFooter } from '@shikkhahub/shared/src/components/opportunity/OpportunityFooter';
+import { useAuthContext } from '@shikkhahub/shared/src/contexts/AuthContext';
+import { SocialMediaType } from '@shikkhahub/shared/src/features/organizations/types';
+import { getLayout } from '../../../components/layouts/MainLayout';
+import { getLayout as getFooterNavBarLayout } from '../../../components/layouts/FooterNavBarLayout';
+import {
+  defaultOpenGraph,
+  defaultSeo,
+  defaultSeoTitle,
+} from '../../../next-seo';
+
+const seo: NextSeoProps = {
+  title: defaultSeoTitle,
+  openGraph: { ...defaultOpenGraph },
+  ...defaultSeo,
+  nofollow: true,
+  noindex: true,
+};
+
+const pixelRatio = globalThis?.window?.devicePixelRatio ?? 1;
+const iconSize = Math.round(24 * pixelRatio);
+
+const faq: Array<{ key: ContentSection; title: string; required: boolean }> = [
+  {
+    key: 'overview',
+    title: 'Overview',
+    required: true,
+  },
+  {
+    key: 'responsibilities',
+    title: 'Responsibilities',
+    required: true,
+  },
+  {
+    key: 'requirements',
+    title: 'Requirements',
+    required: true,
+  },
+  {
+    key: 'whatYoullDo',
+    title: "What you'll do",
+    required: false,
+  },
+  {
+    key: 'interviewProcess',
+    title: 'Interview process',
+    required: false,
+  },
+];
+
+type SocialMediaIconMap = { [Key in SocialMediaType]: ReactElement };
+
+const socialMediaIconMap: SocialMediaIconMap = {
+  [SocialMediaType.Facebook]: <FacebookIcon />,
+  [SocialMediaType.X]: <TwitterIcon />,
+  [SocialMediaType.GitHub]: <GitHubIcon />,
+  [SocialMediaType.Crunchbase]: <CrunchbaseIcon />,
+  [SocialMediaType.LinkedIn]: <LinkedInIcon />,
+  [SocialMediaType.Wellfound]: <OpenLinkIcon />,
+  [SocialMediaType.Glassdoor]: <OpenLinkIcon />,
+  [SocialMediaType.Instagram]: <OpenLinkIcon />,
+  [SocialMediaType.YouTube]: <YoutubeIcon />,
+  [SocialMediaType.GitLab]: <GitLabIcon />,
+  [SocialMediaType.Medium]: <OpenLinkIcon />,
+  [SocialMediaType.DevTo]: <OpenLinkIcon />,
+  [SocialMediaType.StackOverflow]: <StackOverflowIcon />,
+  [SocialMediaType.Threads]: <ThreadsIcon />,
+  [SocialMediaType.Bluesky]: <BlueskyIcon />,
+  [SocialMediaType.Mastodon]: <MastodonIcon />,
+  [SocialMediaType.Roadmap]: <RoadmapIcon />,
+  [SocialMediaType.Codepen]: <CodePenIcon />,
+  [SocialMediaType.Reddit]: <RedditIcon />,
+  [SocialMediaType.Hashnode]: <HashnodeIcon />,
+};
+
+const locationTypeMap = {
+  [LocationType.UNSPECIFIED]: 'N/A',
+  [LocationType.REMOTE]: 'Remote',
+  [LocationType.OFFICE]: 'On-site',
+  [LocationType.HYBRID]: 'Hybrid',
+};
+
+const roleTypeMap = {
+  0: 'Individual Contributor',
+  1: 'Management',
+};
+
+const employmentTypeMap = {
+  [EmploymentType.UNSPECIFIED]: 'N/A',
+  [EmploymentType.FULL_TIME]: 'Full-time',
+  [EmploymentType.PART_TIME]: 'Part-time',
+  [EmploymentType.CONTRACT]: 'Contract',
+  [EmploymentType.INTERNSHIP]: 'Internship',
+};
+
+const salaryPeriodMap = {
+  [SalaryPeriod.UNSPECIFIED]: 'N/A',
+  [SalaryPeriod.ANNUAL]: 'year',
+  [SalaryPeriod.MONTHLY]: 'month',
+  [SalaryPeriod.WEEKLY]: 'week',
+  [SalaryPeriod.DAILY]: 'day',
+  [SalaryPeriod.HOURLY]: 'hour',
+};
+
+const companySizeMap = {
+  [CompanySize.COMPANY_SIZE_UNSPECIFIED]: 'N/A',
+  [CompanySize.COMPANY_SIZE_1_10]: '1-10',
+  [CompanySize.COMPANY_SIZE_11_50]: '11-50',
+  [CompanySize.COMPANY_SIZE_51_200]: '51-200',
+  [CompanySize.COMPANY_SIZE_201_500]: '201-500',
+  [CompanySize.COMPANY_SIZE_501_1000]: '501-1000',
+  [CompanySize.COMPANY_SIZE_1001_5000]: '1001-5000',
+  [CompanySize.COMPANY_SIZE_5000_PLUS]: '5000+',
+};
+
+const companyStageMap = {
+  [CompanyStage.UNSPECIFIED]: 'N/A',
+  [CompanyStage.PRE_SEED]: 'Pre-Seed',
+  [CompanyStage.SEED]: 'Seed',
+  [CompanyStage.SERIES_A]: 'Series A',
+  [CompanyStage.SERIES_B]: 'Series B',
+  [CompanyStage.SERIES_C]: 'Series C',
+  [CompanyStage.SERIES_D]: 'Series D',
+  [CompanyStage.PUBLIC]: 'Public',
+  [CompanyStage.BOOTSTRAPPED]: 'Bootstrapped',
+  [CompanyStage.NON_PROFIT]: 'Non-Profit',
+  [CompanyStage.GOVERNMENT]: 'Government',
+};
+
+const metaMap = {
+  location: {
+    title: 'Location',
+    transformer: (value: Opportunity['locations']) => {
+      if (!value || value.length === 0) {
+        return 'N/A';
+      }
+
+      return (
+        value
+          .map((item) =>
+            [
+              item.location?.city,
+              item.location?.subdivision,
+              item.location?.country,
+              item.location?.continent,
+            ]
+              .filter(Boolean)
+              .join(', '),
+          )
+          .filter(Boolean)
+          .join(' / ') || 'N/A'
+      );
+    },
+  },
+  salary: {
+    title: 'Salary range',
+    transformer: (value: OpportunityMeta['salary']) => {
+      const min = value?.min / 1000;
+      const max = value?.max / 1000;
+      const period = salaryPeriodMap[value?.period || SalaryPeriod.UNSPECIFIED];
+      if (!min || !max) {
+        return 'N/A';
+      }
+      return `$${min}k/${period} - $${max}k/${period}`;
+    },
+  },
+  locationType: {
+    title: 'Work site',
+    transformer: (value: Opportunity['locations']) =>
+      locationTypeMap[value?.[0]?.type || LocationType.UNSPECIFIED],
+  },
+  equity: {
+    title: 'Equity',
+    transformer: (value: OpportunityMeta['equity']) =>
+      value ? 'Included' : null,
+  },
+  seniorityLevel: {
+    title: 'Seniority level',
+    transformer: (value: OpportunityMeta['seniorityLevel']) =>
+      seniorityLevelMap[value || SeniorityLevel.UNSPECIFIED],
+  },
+  employmentType: {
+    title: 'Employment type',
+    transformer: (value: OpportunityMeta['employmentType']) =>
+      employmentTypeMap[value || EmploymentType.UNSPECIFIED],
+  },
+  roleType: {
+    title: 'Role type',
+    transformer: (value: OpportunityMeta['roleType']) =>
+      roleTypeMap[value] || 'N/A',
+  },
+  teamSize: {
+    title: 'Team size',
+    transformer: (value: OpportunityMeta['teamSize']) =>
+      `${value || 0} engineers` || 'N/A',
+  },
+};
+
+// Role info display component - extracted for use with InlineRoleInfoEditor
+const RoleInfoDisplay = ({
+  opportunity,
+}: {
+  opportunity: Opportunity;
+}): ReactElement => (
+  <div className="flex flex-col gap-4">
+    {/* Title */}
+    <Typography bold tag={TypographyTag.H1} type={TypographyType.LargeTitle}>
+      {opportunity.title}
+    </Typography>
+
+    {/* Tags */}
+    {opportunity.keywords?.length > 0 && (
+      <div className="flex flex-wrap gap-2">
+        {opportunity.keywords?.map((tag) => (
+          <Chip key={tag.keyword} className="!my-0 !text-text-tertiary">
+            {tag.keyword}
+          </Chip>
+        ))}
+      </div>
+    )}
+
+    {/* TLDR */}
+    <Typography type={TypographyType.Body} color={TypographyColor.Secondary}>
+      <span className="font-bold text-text-primary">TLDR</span>{' '}
+      {opportunity.tldr}
+    </Typography>
+
+    {/* Details */}
+    <div className="w-full @container">
+      <div className="grid grid-cols-1 gap-x-4 gap-y-2 text-white @[400px]:grid-cols-[max-content_1fr] @[600px]:grid-cols-[max-content_1fr_max-content_1fr]">
+        {Object.keys(metaMap).map((metaKey) => {
+          const { title, transformer } = metaMap[metaKey];
+          const isLocation =
+            metaKey === 'location' || metaKey === 'locationType';
+
+          const value = isLocation
+            ? opportunity.locations
+            : opportunity.meta[metaKey];
+
+          if (value === false || value === null) {
+            return false;
+          }
+
+          return (
+            <Fragment key={metaKey}>
+              <Typography
+                className="@[600px]:[&:nth-child(4n+3)]:pl-2"
+                type={TypographyType.Footnote}
+                color={TypographyColor.Tertiary}
+              >
+                {title}
+              </Typography>
+              <Typography
+                className="@[600px]:[&:nth-child(4n+3)]:pl-2"
+                bold
+                type={TypographyType.Subhead}
+                color={TypographyColor.Primary}
+              >
+                {transformer(value)}
+              </Typography>
+            </Fragment>
+          );
+        })}
+      </div>
+    </div>
+  </div>
+);
+
+export type JobPageProps = {
+  /**
+   * Optional opportunity ID. When not provided, uses router query.
+   * Used when JobPage is rendered as a component (e.g., in side-by-side editor).
+   */
+  id?: string;
+  hideHeader?: boolean;
+  hideCompanyBadge?: boolean;
+  hideRecruiterBadge?: boolean;
+  hideCompanyPanel?: boolean;
+  hideRecruiterPanel?: boolean;
+  /**
+   * When true, disables all edit functionality (preview-only mode)
+   */
+  previewMode?: boolean;
+  /**
+   * Optional preview data that overrides the fetched opportunity data.
+   * Used for real-time preview in side-by-side editing.
+   */
+  previewData?: Partial<Opportunity>;
+  /**
+   * Optional sections to expand in preview mode.
+   * Used to sync accordion state with edit panel focus.
+   */
+  expandedSections?: Set<ContentSection>;
+};
+
+const JobPage = ({
+  id: propId,
+  hideHeader,
+  hideCompanyBadge,
+  hideRecruiterBadge,
+  hideCompanyPanel,
+  hideRecruiterPanel,
+  previewMode,
+  previewData,
+  expandedSections,
+}: JobPageProps = {}): ReactElement => {
+  const { isLoggedIn, isAuthReady } = useAuthContext();
+  const { logEvent } = useLogContext();
+  const { checkHasCompleted, isActionsFetched } = useActions();
+  const {
+    query: { id: routerId },
+  } = useRouter();
+  // Use prop ID if provided (when used as component), otherwise use router query (when used as page)
+  const id = propId || (routerId as string);
+
+  const logRef = useRef<typeof logEvent>();
+  const hasLoggedRef = useRef(false);
+  logRef.current = logEvent;
+
+  const { data: fetchedOpportunity, isPending } = useQuery(
+    opportunityByIdOptions({ id: id as string }),
+  );
+
+  // Merge previewData with fetched opportunity for real-time preview
+  const opportunity = React.useMemo(() => {
+    if (!fetchedOpportunity) {
+      return undefined;
+    }
+    if (!previewData) {
+      return fetchedOpportunity;
+    }
+    return {
+      ...fetchedOpportunity,
+      ...previewData,
+      meta: {
+        ...fetchedOpportunity.meta,
+        ...previewData.meta,
+        salary: {
+          ...fetchedOpportunity.meta?.salary,
+          ...previewData.meta?.salary,
+        },
+      },
+      content: {
+        ...fetchedOpportunity.content,
+        ...previewData.content,
+      },
+      locations:
+        previewData.locations?.map((loc, i) => ({
+          ...fetchedOpportunity.locations?.[i],
+          ...loc,
+          location: {
+            ...fetchedOpportunity.locations?.[i]?.location,
+            ...loc.location,
+          },
+        })) ?? fetchedOpportunity.locations,
+    } as Opportunity;
+  }, [fetchedOpportunity, previewData]);
+  const { data: match } = useQuery({
+    ...opportunityMatchOptions({ id: id as string }),
+    enabled: isLoggedIn && !!id && !isPending,
+  });
+
+  const hasCompletedInitialView = checkHasCompleted(
+    ActionType.OpportunityInitialView,
+  );
+
+  const [showMore, setShowMore] = useState(false);
+
+  const hasLinks =
+    opportunity?.organization?.customLinks?.length > 0 ||
+    opportunity?.organization?.pressLinks?.length > 0;
+
+  // Log opportunity view for all users
+  // For logged-in users: wait for match query to resolve to include match_status
+  // For anonymous users: log immediately with 'no-match' status
+  useEffect(() => {
+    if (!opportunity || !id || hasLoggedRef.current) {
+      return;
+    }
+
+    // For logged-in users, wait until match query has resolved
+    // match will be undefined while loading, then either the match object or null
+    if (isLoggedIn && match === undefined) {
+      return;
+    }
+
+    logRef.current({
+      event_name: LogEvent.OpportunityMatchView,
+      target_id: id,
+      extra: JSON.stringify({ match_status: match?.status ?? 'no-match' }),
+    });
+    hasLoggedRef.current = true;
+  }, [id, opportunity, isLoggedIn, match]);
+
+  if (!isAuthReady || isPending || (!isActionsFetched && isLoggedIn)) {
+    return null;
+  }
+
+  if (!opportunity) {
+    return <NoOpportunity />;
+  }
+
+  const showFooterNav = true; // Always show footer nav for interest/response buttons
+
+  const renderInterestButtons = (
+    containerClassName: string,
+    size: ButtonSize,
+  ): ReactElement | null => {
+    // Logged in user with an existing match - show response buttons
+    if (
+      isLoggedIn &&
+      match &&
+      match.status !== OpportunityMatchStatus.CandidateApplied
+    ) {
+      return (
+        <ResponseButtons
+          id={opportunity.id}
+          className={{
+            buttons: containerClassName.includes('w-full') ? 'flex-1' : '',
+            container: containerClassName,
+          }}
+          size={size}
+        />
+      );
+    }
+
+    // Anonymous user or logged in user without a match - show interest button
+    return (
+      <ShowInterestButton
+        opportunityId={opportunity.id}
+        className={{
+          button: containerClassName.includes('w-full') ? 'flex-1' : '',
+          container: containerClassName,
+        }}
+        size={size}
+      />
+    );
+  };
+
+  return (
+    <>
+      {!hasCompletedInitialView && !previewMode && (
+        <div className="my-4">
+          <JobPageIntro />
+        </div>
+      )}
+      {showFooterNav && (
+        <OpportunityFooter>
+          {renderInterestButtons(
+            'flex w-full items-center gap-4',
+            ButtonSize.Medium,
+          )}
+        </OpportunityFooter>
+      )}
+      <div className="z-0 mx-auto flex w-full max-w-[69.25rem] flex-col gap-4 pb-safe-offset-14 tablet:pb-0 laptop:flex-row laptop:justify-center laptop:py-8">
+        <div
+          className={classNames(
+            'h-full min-w-0 max-w-full flex-1 flex-shrink-0 rounded-16 border border-border-subtlest-tertiary',
+            hideCompanyPanel && hideRecruiterPanel && 'laptop:max-w-3xl',
+          )}
+        >
+          {/* Header */}
+          {!hideHeader && !previewMode && (
+            <div className="flex min-h-14 items-center justify-between gap-4 border-b border-border-subtlest-tertiary p-3">
+              <GoBackButton showLogo={false} />
+
+              {renderInterestButtons(
+                'hidden items-center gap-4 laptop:flex',
+                ButtonSize.Medium,
+              )}
+            </div>
+          )}
+
+          {/* Content */}
+          <div className="flex flex-col gap-4 px-8 py-6">
+            {!hideCompanyBadge && !!opportunity.organization && (
+              <div className="flex items-center">
+                <SourceAvatar
+                  source={{
+                    image: opportunity.organization.image,
+                    handle: opportunity.organization.name,
+                  }}
+                  size={ProfileImageSize.Medium}
+                />
+
+                <Typography
+                  bold
+                  type={TypographyType.Callout}
+                  color={TypographyColor.Primary}
+                >
+                  {opportunity.organization.name}{' '}
+                  <Typography
+                    tag={TypographyTag.Span}
+                    color={TypographyColor.Tertiary}
+                    className="font-normal"
+                  >
+                    Verified job
+                  </Typography>
+                </Typography>
+              </div>
+            )}
+            {/* Recruiter */}
+            {!hideRecruiterBadge && !!opportunity.recruiters?.[0] && (
+              <div className="flex items-center gap-2">
+                <ProfilePicture
+                  user={opportunity.recruiters[0]}
+                  size={ProfileImageSize.Large}
+                />
+
+                <div className="flex flex-1 flex-col truncate">
+                  <Typography
+                    bold
+                    truncate
+                    type={TypographyType.Callout}
+                    color={TypographyColor.Primary}
+                  >
+                    {opportunity.recruiters[0].name}
+                  </Typography>
+                  <Typography
+                    truncate
+                    type={TypographyType.Footnote}
+                    color={TypographyColor.Tertiary}
+                  >
+                    {opportunity.recruiters[0].title}
+                  </Typography>
+                </div>
+              </div>
+            )}
+
+            {/* Role Info - Title, Tags, TLDR, Details */}
+            <div id="job-preview-roleInfo">
+              <RoleInfoDisplay opportunity={opportunity} />
+            </div>
+
+            {/* Why we think */}
+            {!!match?.description?.reasoning && (
+              <FlexCol
+                className="gap-2 rounded-16 p-4 text-black"
+                style={{
+                  background: briefButtonBg,
+                }}
+              >
+                <div className="flex items-center gap-1">
+                  <MagicIcon size={IconSize.Medium} />
+                  <Typography bold type={TypographyType.Body} truncate>
+                    Why we think you&apos;ll like this
+                  </Typography>
+                </div>
+                <Typography type={TypographyType.Callout}>
+                  {match?.description?.reasoning}
+                </Typography>
+              </FlexCol>
+            )}
+          </div>
+
+          {/* Content sections */}
+          {faq.map((faqItem, index) => {
+            const contentHtml = opportunity.content[faqItem.key]?.html;
+
+            if (!contentHtml) {
+              return null; // Don't show empty sections to candidates
+            }
+
+            // In preview mode with expandedSections, control accordion state
+            const shouldExpand = expandedSections?.has(faqItem.key);
+
+            return (
+              <div
+                key={faqItem.key}
+                id={`job-preview-${faqItem.key}`}
+                className={classNames(
+                  'border-t border-border-subtlest-tertiary px-4',
+                  index === faq.length - 1 && 'rounded-b-14',
+                )}
+              >
+                <Accordion
+                  className={{
+                    button: classNames('min-h-12 flex-row-reverse'),
+                  }}
+                  title={<Typography>{faqItem.title}</Typography>}
+                  isOpen={shouldExpand || undefined}
+                >
+                  <div
+                    className="pb-4 text-text-secondary [&_li]:my-1 [&_li]:pl-1 [&_li_p]:my-0 [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5"
+                    dangerouslySetInnerHTML={{
+                      __html: contentHtml,
+                    }}
+                  />
+                </Accordion>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Sidebar */}
+        {(!hideCompanyPanel || !hideRecruiterPanel) && (
+          <FlexCol className="h-full flex-1 flex-shrink-0 gap-4 laptop:max-w-80">
+            {!previewMode && (
+              <FlexCol
+                className={classNames(
+                  'mx-4 flex-1 gap-4 rounded-16 border border-border-subtlest-tertiary tablet:mx-0',
+                )}
+              >
+                <Link href={`${opportunityUrl}/how-it-works`} passHref>
+                  <Button
+                    tag="a"
+                    variant={ButtonVariant.Tertiary}
+                    size={ButtonSize.Medium}
+                    icon={<InfoIcon />}
+                    iconPosition={ButtonIconPosition.Left}
+                    className="w-full"
+                  >
+                    How it works
+                  </Button>
+                </Link>
+              </FlexCol>
+            )}
+
+            {/* Company Info */}
+            {!hideCompanyPanel && (
+              <FlexCol
+                id="job-preview-company"
+                className={classNames(
+                  'flex-1 gap-4 rounded-16 border border-border-subtlest-tertiary',
+                  !hasLinks && 'pb-4',
+                )}
+              >
+                {/* Header */}
+                <div className="flex min-h-14 items-center justify-between px-4 py-3">
+                  <Typography
+                    bold
+                    type={TypographyType.Body}
+                    color={TypographyColor.Primary}
+                  >
+                    Company
+                  </Typography>
+
+                  {!!opportunity.organization?.website && (
+                    <Link href={opportunity.organization.website} passHref>
+                      <Button
+                        tag="a"
+                        target="_blank"
+                        rel={anchorDefaultRel}
+                        variant={ButtonVariant.Subtle}
+                        size={ButtonSize.Small}
+                        icon={<OpenLinkIcon />}
+                        iconPosition={ButtonIconPosition.Right}
+                      >
+                        Website
+                      </Button>
+                    </Link>
+                  )}
+                </div>
+                {/* Company information */}
+                {!!opportunity.organization && (
+                  <div className="flex px-4">
+                    <SourceAvatar
+                      source={{
+                        image: opportunity.organization.image,
+                        handle: opportunity.organization.name,
+                      }}
+                      size={ProfileImageSize.Large}
+                    />
+
+                    <div className="flex flex-shrink flex-col flex-wrap">
+                      <Typography
+                        type={TypographyType.Body}
+                        color={TypographyColor.Primary}
+                      >
+                        {opportunity.organization.name}
+                      </Typography>
+                      <Typography
+                        type={TypographyType.Footnote}
+                        color={TypographyColor.Tertiary}
+                      >
+                        {companyStageMap[opportunity.organization.stage]}
+                        {opportunity.organization?.category
+                          ? ` • ${opportunity.organization.category}`
+                          : null}
+                      </Typography>
+                    </div>
+                  </div>
+                )}
+
+                {/* SoMe Links */}
+                {opportunity.organization?.socialLinks?.length > 0 && (
+                  <div className="flex gap-2 px-4">
+                    {opportunity.organization.socialLinks.map(
+                      ({ link, socialType }) => (
+                        <Link key={link} href={link} passHref>
+                          <Button
+                            tag="a"
+                            variant={ButtonVariant.Subtle}
+                            size={ButtonSize.Small}
+                            icon={
+                              socialMediaIconMap[
+                                socialType.toLowerCase() as keyof typeof socialMediaIconMap
+                              ]
+                            }
+                            target="_blank"
+                            rel={anchorDefaultRel}
+                          />
+                        </Link>
+                      ),
+                    )}
+                  </div>
+                )}
+
+                {/* Meta */}
+                <div className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 px-4">
+                  <Typography
+                    type={TypographyType.Subhead}
+                    color={TypographyColor.Tertiary}
+                  >
+                    Founded
+                  </Typography>
+                  <Typography type={TypographyType.Footnote} bold>
+                    {opportunity.organization?.founded || 'N/A'}
+                  </Typography>
+
+                  <Typography
+                    type={TypographyType.Subhead}
+                    color={TypographyColor.Tertiary}
+                  >
+                    HQ
+                  </Typography>
+                  <Typography type={TypographyType.Footnote} bold>
+                    {locationToString(opportunity.organization?.location) ||
+                      'N/A'}
+                  </Typography>
+
+                  <Typography
+                    type={TypographyType.Subhead}
+                    color={TypographyColor.Tertiary}
+                  >
+                    Employees
+                  </Typography>
+                  <Typography type={TypographyType.Footnote} bold>
+                    {companySizeMap[opportunity.organization?.size] || 'N/A'}
+                  </Typography>
+                </div>
+
+                {/* Description */}
+                {!!opportunity.organization?.description && (
+                  <Typography
+                    className="px-4"
+                    type={TypographyType.Callout}
+                    color={TypographyColor.Secondary}
+                  >
+                    {opportunity.organization.description}
+                  </Typography>
+                )}
+
+                {/* Perks & Benefits */}
+                {opportunity.organization?.perks?.length > 0 && (
+                  <div className="flex flex-col gap-2 px-4">
+                    <Typography bold type={TypographyType.Callout}>
+                      Perks & Benefits
+                    </Typography>
+
+                    <ul className="list-disc pl-7">
+                      {opportunity.organization.perks.map((perk) => (
+                        <Typography
+                          key={perk}
+                          tag={TypographyTag.Li}
+                          type={TypographyType.Callout}
+                          color={TypographyColor.Secondary}
+                        >
+                          {perk}
+                        </Typography>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {hasLinks && (
+                  <>
+                    {/* Resources */}
+                    {opportunity.organization.customLinks?.length > 0 && (
+                      <div
+                        className={classNames(
+                          'flex flex-col gap-2 px-4 pb-2',
+                          showMore ? '' : 'hidden',
+                        )}
+                      >
+                        <Typography bold type={TypographyType.Callout}>
+                          Resources
+                        </Typography>
+
+                        {opportunity.organization.customLinks.map(
+                          ({ link, title }) => (
+                            <Link key={link} href={link} passHref>
+                              <Button
+                                tag="a"
+                                target="_blank"
+                                rel={anchorDefaultRel}
+                                variant={ButtonVariant.Subtle}
+                                icon={
+                                  <OpenLinkIcon
+                                    className="text-text-disabled"
+                                    size={IconSize.Small}
+                                  />
+                                }
+                                iconPosition={ButtonIconPosition.Right}
+                                className="justify-between !pl-2 !pr-3 font-normal text-text-secondary"
+                              >
+                                {title}
+                              </Button>
+                            </Link>
+                          ),
+                        )}
+                      </div>
+                    )}
+
+                    {/* Featured press */}
+                    {opportunity.organization.pressLinks?.length > 0 && (
+                      <div
+                        className={classNames(
+                          'flex flex-col gap-2 px-4 pb-2',
+                          showMore ? '' : 'hidden',
+                        )}
+                      >
+                        <Typography bold type={TypographyType.Callout}>
+                          Featured press
+                        </Typography>
+
+                        {opportunity.organization.pressLinks.map(
+                          ({ link, title }) => (
+                            <Link key={link} href={link} passHref>
+                              <Button
+                                tag="a"
+                                target="_blank"
+                                rel={anchorDefaultRel}
+                                variant={ButtonVariant.Subtle}
+                                icon={
+                                  <OpenLinkIcon
+                                    className="text-text-disabled"
+                                    size={IconSize.Small}
+                                  />
+                                }
+                                iconPosition={ButtonIconPosition.Right}
+                                className="justify-between !pl-2 !pr-3 font-normal text-text-secondary"
+                              >
+                                <Image
+                                  className={classNames(
+                                    'mr-2 rounded-full object-cover',
+                                    sizeClasses[ProfileImageSize.Small],
+                                  )}
+                                  src={`${apiUrl}/icon?url=${encodeURIComponent(
+                                    link,
+                                  )}&size=${iconSize}`}
+                                  type={ImageType.Squad}
+                                />
+                                <span className="flex-1 truncate text-left">
+                                  {title}
+                                </span>
+                              </Button>
+                            </Link>
+                          ),
+                        )}
+                      </div>
+                    )}
+
+                    <Button
+                      aria-controls="company-show-more"
+                      aria-expanded={showMore}
+                      className="flex w-full flex-row !justify-center gap-1 rounded-none border-0 border-t border-border-subtlest-tertiary !px-4 py-2.5"
+                      type="button"
+                      onClick={() => setShowMore((prev) => !prev)}
+                    >
+                      <Typography
+                        type={TypographyType.Callout}
+                        color={TypographyColor.Primary}
+                      >
+                        {showMore ? 'See less' : 'See more'}
+                      </Typography>
+
+                      <MoveToIcon
+                        className={classNames(
+                          'transition-transform ease-in-out',
+                          {
+                            'rotate-90': !showMore,
+                            '-rotate-90': showMore,
+                          },
+                        )}
+                      />
+                    </Button>
+                  </>
+                )}
+              </FlexCol>
+            )}
+
+            {/* Recruiter Info */}
+            {!hideRecruiterPanel && opportunity?.recruiters?.length > 0 && (
+              <FlexCol
+                id="job-preview-recruiter"
+                className="flex-1 rounded-16 border-t border-border-subtlest-tertiary laptop:border"
+              >
+                {/* Header */}
+                <div className="flex min-h-14 items-center justify-between px-4 py-3">
+                  <Typography
+                    bold
+                    type={TypographyType.Body}
+                    color={TypographyColor.Primary}
+                  >
+                    Recruiters
+                  </Typography>
+                </div>
+
+                {/* Recruiters */}
+                {opportunity?.recruiters?.map((recruiter) => (
+                  <FlexCol key={recruiter.id} className="gap-4 px-4 pb-4">
+                    <div className="flex items-center gap-2">
+                      <ProfilePicture
+                        user={recruiter}
+                        size={ProfileImageSize.Large}
+                      />
+
+                      <div className="flex flex-1 flex-col truncate">
+                        <Typography
+                          bold
+                          truncate
+                          type={TypographyType.Callout}
+                          color={TypographyColor.Primary}
+                        >
+                          {recruiter.name}
+                        </Typography>
+                        {recruiter?.title && (
+                          <Typography
+                            truncate
+                            type={TypographyType.Footnote}
+                            color={TypographyColor.Tertiary}
+                          >
+                            {recruiter.title}
+                          </Typography>
+                        )}
+                      </div>
+                    </div>
+                    {/* Description */}
+                    <ShowMoreContent
+                      content={recruiter?.bio}
+                      className={{ text: '!text-text-secondary !typo-callout' }}
+                    />
+                  </FlexCol>
+                ))}
+              </FlexCol>
+            )}
+          </FlexCol>
+        )}
+      </div>
+    </>
+  );
+};
+
+export async function getStaticPaths(): Promise<GetStaticPathsResult> {
+  return { paths: [], fallback: 'blocking' };
+}
+
+export const getStaticProps: GetStaticProps = async (ctx) => {
+  const id = ctx.params?.id;
+  if (!id || typeof id !== 'string') {
+    return { notFound: true };
+  }
+
+  if (id === 'null') {
+    return {
+      redirect: {
+        destination: '/jobs',
+        permanent: false,
+      },
+    };
+  }
+
+  try {
+    const queryClient = new QueryClient();
+    const opportunity = await queryClient.fetchQuery(
+      opportunityByIdOptions({ id }),
+    );
+
+    if (!opportunity) {
+      return { props: { opportunity: null }, revalidate: 60 };
+    }
+
+    const dehydratedState = dehydrate(queryClient);
+
+    return {
+      props: { dehydratedState },
+      revalidate: 300,
+    };
+  } catch (_e) {
+    return { props: { opportunity: null }, revalidate: 60 };
+  }
+};
+
+const getPageLayout: typeof getLayout = (...props) =>
+  getFooterNavBarLayout(getLayout(...props));
+
+JobPage.getLayout = getPageLayout;
+JobPage.layoutProps = {
+  screenCentered: false,
+  seo,
+};
+
+export default JobPage;

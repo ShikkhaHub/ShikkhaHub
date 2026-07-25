@@ -1,0 +1,40 @@
+FROM node:24.14-bookworm-slim
+
+ADD https://www.apple.com/appleca/AppleIncRootCertificate.cer /usr/local/share/ca-certificates/AppleIncRootCertificate.cer
+ADD https://www.apple.com/certificateauthority/AppleRootCA-G2.cer /usr/local/share/ca-certificates/AppleRootCA-G2.cer
+ADD https://www.apple.com/certificateauthority/AppleRootCA-G3.cer /usr/local/share/ca-certificates/AppleRootCA-G3.cer
+
+RUN apt-get update \
+    && apt-get install -y \
+      ca-certificates \
+      iputils-ping \
+      curl \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /opt/app
+WORKDIR /opt/app
+
+RUN npm install -g corepack@0.31.0 \
+    && corepack enable \
+    && corepack prepare pnpm@10.33.4 --activate
+
+COPY .npmrc .
+COPY package.json .
+COPY pnpm-lock.yaml .
+COPY pnpm-workspace.yaml .
+COPY patches patches
+COPY queries queries
+COPY geoip geoip
+COPY clickhouse/migrations/*.sql clickhouse/migrations/
+
+RUN npm i -g nodemon
+
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+
+ENV PATH=/opt/app/node_modules/.bin:$PATH
+
+CMD ["npm", "run", "dev"]
+

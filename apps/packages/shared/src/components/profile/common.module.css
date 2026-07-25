@@ -1,0 +1,8 @@
+.commentContent {
+  max-height: 3.75rem;
+  -webkit-line-clamp: 3;
+
+  @screen tablet {
+    max-width: 19.25rem;
+  }
+}

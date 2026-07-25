@@ -1,0 +1,499 @@
+import type { ReactElement, ReactNode } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import type { AppProps } from 'next/app';
+import dynamic from 'next/dynamic';
+import Head from 'next/head';
+import 'focus-visible';
+import { useConsoleLogo } from '@shikkhahub/shared/src/hooks/useConsoleLogo';
+import { DefaultSeo, NextSeo } from 'next-seo';
+import type { DehydratedState } from '@tanstack/react-query';
+import {
+  HydrationBoundary,
+  QueryClient,
+  QueryClientProvider,
+} from '@tanstack/react-query';
+import { useAuthContext } from '@shikkhahub/shared/src/contexts/AuthContext';
+import {
+  useCookieBanner,
+  cookieAcknowledgedKey,
+} from '@shikkhahub/shared/src/hooks/useCookieBanner';
+import { ProgressiveEnhancementContextProvider } from '@shikkhahub/shared/src/contexts/ProgressiveEnhancementContext';
+import { SubscriptionContextProvider } from '@shikkhahub/shared/src/contexts/SubscriptionContext';
+import { ShortcutsProvider } from '@shikkhahub/shared/src/features/shortcuts/contexts/ShortcutsProvider';
+import { canonicalFromRouter } from '@shikkhahub/shared/src/lib/canonical';
+import '@shikkhahub/shared/src/styles/globals.css';
+import useLogPageView from '@shikkhahub/shared/src/hooks/log/useLogPageView';
+import { BootDataProvider } from '@shikkhahub/shared/src/contexts/BootProvider';
+import { PostReferrerContextProvider } from '@shikkhahub/shared/src/contexts/PostReferrerContext';
+import useDeviceId from '@shikkhahub/shared/src/hooks/log/useDeviceId';
+import { useError } from '@shikkhahub/shared/src/hooks/useError';
+import { useIOSError } from '@shikkhahub/shared/src/hooks/useIOSError';
+import { BootApp } from '@shikkhahub/shared/src/lib/boot';
+import { useNotificationContext } from '@shikkhahub/shared/src/contexts/NotificationsContext';
+import { getUnreadText } from '@shikkhahub/shared/src/components/notifications/utils';
+import { useLazyModal } from '@shikkhahub/shared/src/hooks/useLazyModal';
+import { LazyModal } from '@shikkhahub/shared/src/components/modals/common/types';
+import { defaultQueryClientConfig } from '@shikkhahub/shared/src/lib/query';
+import { useWebVitals } from '@shikkhahub/shared/src/hooks/useWebVitals';
+import { LazyModalElement } from '@shikkhahub/shared/src/components/modals/LazyModalElement';
+import { useManualScrollRestoration } from '@shikkhahub/shared/src/hooks';
+import { useScrollbarWidth } from '@shikkhahub/shared/src/hooks/useScrollbarWidth';
+import { PushNotificationContextProvider } from '@shikkhahub/shared/src/contexts/PushNotificationContext';
+import { SerwistProvider } from '@serwist/turbopack/react';
+import { useThemedAsset } from '@shikkhahub/shared/src/hooks/utils';
+import { DndContextProvider } from '@shikkhahub/shared/src/contexts/DndContext';
+import { structuredCloneJsonPolyfill } from '@shikkhahub/shared/src/lib/structuredClone';
+import { fromCDN } from '@shikkhahub/shared/src/lib';
+import { useOnboardingActions } from '@shikkhahub/shared/src/hooks/auth';
+import { useCheckCoresRole } from '@shikkhahub/shared/src/hooks/useCheckCoresRole';
+import {
+  messageHandlerExists,
+  postWebKitMessage,
+  WebKitMessageHandlers,
+} from '@shikkhahub/shared/src/lib/ios';
+import { useCheckLocation } from '@shikkhahub/shared/src/hooks/useCheckLocation';
+import { useFeature } from '@shikkhahub/shared/src/components/GrowthBookProvider';
+import { featureInlineLogin } from '@shikkhahub/shared/src/lib/featureManagement';
+import Seo, { defaultSeo, defaultSeoTitle } from '../next-seo';
+import useWebappVersion from '../hooks/useWebappVersion';
+import { getAppOrigin, getSiteOrigin } from '../lib/seo';
+import { PixelsProvider } from '../context/PixelsContext';
+
+structuredCloneJsonPolyfill();
+
+const CookieBanner = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "cookieBanner" */ '../components/banner/CookieBanner'
+    ),
+);
+
+const AuthModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "authModal" */ '@shikkhahub/shared/src/components/auth/AuthModal'
+    ),
+);
+
+const ReactQueryDevtools =
+  process.env.NODE_ENV === 'development'
+    ? dynamic(() =>
+        import('@tanstack/react-query-devtools').then(
+          (mod) => mod.ReactQueryDevtools,
+        ),
+      )
+    : (): null => null;
+
+interface ComponentGetLayout {
+  getLayout?: (
+    page: ReactNode,
+    pageProps: Record<string, unknown>,
+    layoutProps: Record<string, unknown>,
+  ) => ReactNode;
+  layoutProps?: Record<string, unknown>;
+}
+
+const getRedirectUri = () =>
+  `${window.location.origin}${window.location.pathname}`;
+
+const getPage = () => window.location.pathname;
+
+const onboardingExcludedPaths = [
+  '/onboarding',
+  '/recruiter',
+  '/jobs',
+  '/settings',
+];
+// When the inline_login experiment is on, we only force the rest of onboarding
+// when the user lands on the main feed — everywhere else they can keep
+// browsing after the inline first step.
+const mainFeedPathnames = new Set([
+  '/',
+  '/popular',
+  '/upvoted',
+  '/discussed',
+  '/latest',
+  '/following',
+  '/my-feed',
+]);
+const hotAndColdModalQueryKey = 'openModal';
+const hotAndColdModalQueryValue = 'hottakes';
+const hotAndColdModalLegacyQueryValue = 'hotAndCold';
+const isOnboardingExcludedPath = (pathname: string): boolean =>
+  onboardingExcludedPaths.some((path) => pathname.startsWith(path));
+
+const APP_ORIGIN = getAppOrigin();
+const SITE_ORIGIN = getSiteOrigin();
+
+const GLOBAL_SEO_JSON_LD = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': `${SITE_ORIGIN}/#organization`,
+      name: 'daily.dev',
+      url: SITE_ORIGIN,
+      logo: {
+        '@type': 'ImageObject',
+        url: `${SITE_ORIGIN}/apple-touch-icon.png`,
+        width: 180,
+        height: 180,
+      },
+      sameAs: [
+        'https://twitter.com/shikkhahub',
+        'https://github.com/shikkhahub',
+        'https://www.linkedin.com/company/daily-dev-ltd',
+      ],
+    },
+    {
+      '@type': 'WebSite',
+      '@id': `${APP_ORIGIN}/#website`,
+      url: APP_ORIGIN,
+      name: 'daily.dev',
+      publisher: { '@id': `${SITE_ORIGIN}/#organization` },
+      potentialAction: {
+        '@type': 'SearchAction',
+        target: {
+          '@type': 'EntryPoint',
+          urlTemplate: `${APP_ORIGIN}/search?q={search_term_string}`,
+        },
+        'query-input': 'required name=search_term_string',
+      },
+    },
+  ],
+});
+
+function InternalApp({ Component, pageProps, router }: AppProps): ReactElement {
+  const { isOnboardingActionsReady, isOnboardingComplete } =
+    useOnboardingActions();
+  const openedHotAndColdFromQueryRef = useRef(false);
+
+  const { unreadCount } = useNotificationContext();
+  const unreadText = getUnreadText(unreadCount);
+  const {
+    user,
+    trackingId,
+    isFunnel,
+    shouldShowLogin,
+    closeLogin,
+    loginState,
+  } = useAuthContext();
+  const isInlineLoginEnabled = useFeature(featureInlineLogin);
+  const { showBanner, onAcceptCookies, onOpenBanner, onHideBanner } =
+    useCookieBanner();
+  useWebVitals();
+  useLogPageView();
+  const { modal, closeModal, openModal } = useLazyModal();
+  useConsoleLogo();
+  useIOSError();
+
+  useCheckCoresRole();
+  useCheckLocation();
+
+  const activeModalType = modal?.type;
+  const hotAndColdModalQuery = router.query[hotAndColdModalQueryKey];
+  const shouldOpenHotAndColdFromQuery =
+    hotAndColdModalQuery === hotAndColdModalQueryValue ||
+    hotAndColdModalQuery === hotAndColdModalLegacyQueryValue ||
+    (Array.isArray(hotAndColdModalQuery) &&
+      (hotAndColdModalQuery.includes(hotAndColdModalQueryValue) ||
+        hotAndColdModalQuery.includes(hotAndColdModalLegacyQueryValue)));
+
+  useEffect(() => {
+    if (!shouldOpenHotAndColdFromQuery) {
+      openedHotAndColdFromQueryRef.current = false;
+      return;
+    }
+
+    if (activeModalType === LazyModal.HotAndCold) {
+      openedHotAndColdFromQueryRef.current = true;
+      return;
+    }
+
+    if (activeModalType) {
+      return;
+    }
+
+    if (!openedHotAndColdFromQueryRef.current) {
+      openModal({ type: LazyModal.HotAndCold });
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has(hotAndColdModalQueryKey)) {
+      return;
+    }
+
+    url.searchParams.delete(hotAndColdModalQueryKey);
+    const nextPath = `${url.pathname}${url.search}${url.hash}`;
+
+    router.replace(nextPath, undefined, { shallow: true });
+  }, [activeModalType, openModal, router, shouldOpenHotAndColdFromQuery]);
+
+  useEffect(() => {
+    if (
+      isFunnel ||
+      !isOnboardingActionsReady ||
+      isOnboardingComplete ||
+      isOnboardingExcludedPath(router.pathname)
+    ) {
+      return;
+    }
+
+    // Inline login experiment: defer the rest of onboarding until the user
+    // navigates to the main feed; otherwise let them keep browsing.
+    if (isInlineLoginEnabled && !mainFeedPathnames.has(router.pathname)) {
+      return;
+    }
+
+    router.replace('/onboarding');
+    // `router.pathname` is depended on explicitly because the `router` ref is
+    // stable across in-app navigations.
+  }, [
+    isFunnel,
+    isOnboardingActionsReady,
+    router,
+    router.pathname,
+    isOnboardingComplete,
+    isInlineLoginEnabled,
+  ]);
+
+  useEffect(() => {
+    const id = user?.id || trackingId;
+    if (id && messageHandlerExists(WebKitMessageHandlers.UpdateUserId)) {
+      postWebKitMessage(WebKitMessageHandlers.UpdateUserId, id);
+    }
+  }, [user?.id, trackingId]);
+
+  useEffect(() => {
+    if (
+      user?.subscriptionFlags?.appAccountToken &&
+      messageHandlerExists(WebKitMessageHandlers.IAPSetAppAccountToken)
+    ) {
+      postWebKitMessage(
+        WebKitMessageHandlers.IAPSetAppAccountToken,
+        user.subscriptionFlags.appAccountToken,
+      );
+    }
+  }, [user?.subscriptionFlags?.appAccountToken]);
+
+  useEffect(() => {
+    if (!modal) {
+      return undefined;
+    }
+
+    const onRouteChange = () => {
+      if (!modal.persistOnRouteChange) {
+        closeModal();
+      }
+    };
+
+    router.events.on('routeChangeStart', onRouteChange);
+
+    return () => {
+      router.events.off('routeChangeStart', onRouteChange);
+    };
+  }, [modal, closeModal, router.events]);
+
+  const getLayout =
+    (Component as ComponentGetLayout).getLayout || ((page) => page);
+  const { layoutProps } = Component as ComponentGetLayout;
+
+  const { themeColor } = useThemedAsset();
+  const seo = (pageProps?.seo || layoutProps?.seo) as Record<string, unknown>;
+
+  const showAppStoreBanner = !router.pathname.startsWith('/helloworld');
+  const isImageGenerator = router.pathname.startsWith('/image-generator');
+  const canonical = canonicalFromRouter(router);
+
+  return (
+    <SerwistProvider
+      swUrl="/serwist/sw.js"
+      disable={!user}
+      register={!!user}
+      reloadOnOnline={false}
+    >
+      <>
+        <Head>
+          <meta
+            name="viewport"
+            content="initial-scale=1.0, width=device-width, viewport-fit=cover"
+          />
+          <meta name="theme-color" content={themeColor} />
+          <meta
+            name="apple-mobile-web-app-status-bar-style"
+            content={themeColor}
+          />
+
+          <meta name="application-name" content="daily.dev" />
+          <meta name="apple-mobile-web-app-capable" content="yes" />
+          <meta name="apple-mobile-web-app-title" content="daily.dev" />
+          <meta name="format-detection" content="telephone=no" />
+          <meta name="mobile-web-app-capable" content="yes" />
+          <meta name="slack-app-id" content="A07AM7XC529" />
+          {showAppStoreBanner && (
+            <meta name="apple-itunes-app" content="app-id=6740634400" />
+          )}
+          <meta
+            name="facebook-domain-verification"
+            content="78sk2yqe8k6z8uznxwj6q82gklhy42"
+          />
+
+          <link
+            rel="apple-touch-icon"
+            sizes="180x180"
+            href={fromCDN('/apple-touch-icon.png')}
+          />
+          <link
+            rel="icon"
+            type="image/png"
+            sizes="32x32"
+            href={fromCDN('/favicon-32x32.png')}
+          />
+          <link
+            rel="icon"
+            type="image/png"
+            sizes="16x16"
+            href={fromCDN('/favicon-16x16.png')}
+          />
+          <link rel="manifest" href="/manifest.json" />
+          <link
+            rel="sitemap"
+            type="application/xml"
+            title="Sitemap"
+            href="/sitemap.xml"
+          />
+          <link
+            rel="alternate"
+            type="text/plain"
+            href="/llms.txt"
+            title="LLM-friendly site directory"
+          />
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: GLOBAL_SEO_JSON_LD }}
+          />
+
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `window.addEventListener('load', () => { window.windowLoaded = true; }, {
+      once: true,
+    });`,
+            }}
+          />
+
+          <link rel="preconnect" href="https://api.daily.dev" />
+          <link rel="preconnect" href="https://media.daily.dev" />
+          <link rel="dns-prefetch" href="https://connect.facebook.net" />
+          <link rel="dns-prefetch" href="https://www.googletagmanager.com" />
+          <link rel="dns-prefetch" href="https://static.hotjar.com" />
+          <link rel="dns-prefetch" href="https://static.ads-twitter.com" />
+          <link rel="dns-prefetch" href="https://www.redditstatic.com" />
+          <link rel="dns-prefetch" href="https://analytics.tiktok.com" />
+        </Head>
+        <DefaultSeo
+          {...Seo}
+          {...defaultSeo}
+          title={defaultSeoTitle}
+          canonical={canonical}
+          openGraph={{
+            ...Seo.openGraph,
+            url: canonical,
+          }}
+          titleTemplate={unreadCount ? `(${unreadText}) %s` : '%s'}
+        />
+        {!!seo && <NextSeo {...seo} />}
+        <LazyModalElement />
+        <DndContextProvider>
+          {getLayout(<Component {...pageProps} />, pageProps, layoutProps)}
+        </DndContextProvider>
+        {isInlineLoginEnabled && shouldShowLogin && (
+          <AuthModal
+            isOpen={shouldShowLogin}
+            onRequestClose={closeLogin}
+            contentLabel="Login Modal"
+            trigger={loginState?.trigger}
+          />
+        )}
+        {showBanner && !isFunnel && !isImageGenerator && (
+          <CookieBanner
+            onAccepted={onAcceptCookies}
+            onHideBanner={onHideBanner}
+            onModalClose={() => {
+              const interacted = !!localStorage.getItem(cookieAcknowledgedKey);
+
+              if (!interacted) {
+                onOpenBanner();
+              }
+            }}
+          />
+        )}
+        <div className="award-easter-egg-container" />
+      </>
+    </SerwistProvider>
+  );
+}
+
+/**
+ * Pages under `/dev/*` are internal review surfaces that don't need the
+ * full app shell (BootDataProvider, Serwist offline page, auth, etc.).
+ * They hit production APIs that won't accept localhost cookies, so we
+ * short-circuit to a minimal QueryClient-only tree.
+ */
+const isDevReviewRoute = (pathname: string | undefined): boolean =>
+  !!pathname && pathname.startsWith('/dev/');
+
+export default function App(
+  props: AppProps<{ dehydratedState: DehydratedState }>,
+): ReactElement {
+  const [queryClient] = useState(
+    () => new QueryClient(defaultQueryClientConfig),
+  );
+  const version = useWebappVersion();
+  const deviceId = useDeviceId();
+  useError();
+  useManualScrollRestoration();
+  useScrollbarWidth();
+
+  const { Component, pageProps, router } = props;
+  const { dehydratedState } = pageProps;
+
+  if (isDevReviewRoute(router?.pathname)) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <HydrationBoundary state={dehydratedState}>
+          <Component {...pageProps} />
+        </HydrationBoundary>
+      </QueryClientProvider>
+    );
+  }
+
+  return (
+    <ProgressiveEnhancementContextProvider>
+      <QueryClientProvider client={queryClient}>
+        <HydrationBoundary state={dehydratedState}>
+          <BootDataProvider
+            app={BootApp.Webapp}
+            getRedirectUri={getRedirectUri}
+            getPage={getPage}
+            version={version}
+            deviceId={deviceId}
+          >
+            <PixelsProvider>
+              <PushNotificationContextProvider>
+                <SubscriptionContextProvider>
+                  <PostReferrerContextProvider>
+                    <ShortcutsProvider>
+                      <InternalApp {...props} />
+                    </ShortcutsProvider>
+                  </PostReferrerContextProvider>
+                </SubscriptionContextProvider>
+              </PushNotificationContextProvider>
+            </PixelsProvider>
+          </BootDataProvider>
+          <ReactQueryDevtools />
+        </HydrationBoundary>
+      </QueryClientProvider>
+    </ProgressiveEnhancementContextProvider>
+  );
+}

@@ -1,0 +1,52 @@
+import type { ReactElement } from 'react';
+import React, { useEffect, useMemo } from 'react';
+import type { NextSeoProps } from 'next-seo/lib/types';
+import { NextSeo } from 'next-seo';
+import { useFeeds } from '@shikkhahub/shared/src/hooks';
+import { useRouter } from 'next/router';
+import { webappUrl } from '@shikkhahub/shared/src/lib/constants';
+import { defaultOpenGraph, defaultSeo } from '../../../next-seo';
+import {
+  getMainFeedLayout,
+  mainFeedLayoutProps,
+} from '../../../components/layouts/MainFeedPage';
+import { getPageSeoTitles } from '../../../components/layouts/utils';
+
+const FeedPage = (): ReactElement => {
+  const router = useRouter();
+  const { feeds } = useFeeds();
+
+  const feed = useMemo(() => {
+    return feeds?.edges.find(({ node }) => node.id === router.query.slugOrId)
+      ?.node;
+  }, [feeds, router.query.slugOrId]);
+
+  useEffect(() => {
+    if (!feed) {
+      router.replace(webappUrl);
+    }
+  }, [router, feed]);
+
+  const seoTitles = getPageSeoTitles(
+    feed?.flags?.name ? `${feed?.flags?.name} feed` : 'Custom feed',
+  );
+  const seo: NextSeoProps = {
+    title: seoTitles.title,
+    openGraph: {
+      ...seoTitles.openGraph,
+      ...defaultOpenGraph,
+    },
+    ...defaultSeo,
+  };
+
+  return (
+    <>
+      <NextSeo {...seo} />
+    </>
+  );
+};
+
+FeedPage.getLayout = getMainFeedLayout;
+FeedPage.layoutProps = mainFeedLayoutProps;
+
+export default FeedPage;

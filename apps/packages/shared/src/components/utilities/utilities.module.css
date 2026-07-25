@@ -1,0 +1,30 @@
+.pageContainer {
+  max-width: $pageMaxWidth;
+  margin: auto;
+
+  @screen laptop {
+    width: $pageMaxWidth;
+    margin-left: calc(50% - (($pageMaxWidth / 2) - 3rem));
+  }
+
+  @screen laptopL {
+    width: $pageMaxWidth;
+    margin: auto;
+  }
+
+  &:global(.modal-post) {
+    margin: unset;
+  }
+}
+
+.feedPage {
+  &.notReady {
+    & > * {
+      visibility: hidden;
+    }
+  }
+}
+
+.activeTabIndicator {
+  border-radius: 0.063rem;
+}

@@ -1,0 +1,70 @@
+.blur {
+  filter: blur(1.25rem);
+}
+
+.card {
+  & > * {
+    pointer-events: none;
+  }
+
+  &.trending {
+    z-index: 1;
+
+    @screen tablet {
+      height: 100%;
+    }
+  }
+
+  & a,
+  & button,
+  & label:not(:global(.readOnly)) {
+    pointer-events: all;
+    z-index: 1;
+  }
+
+  & .link {
+    z-index: unset;
+
+    &:focus:focus-visible {
+      border-radius: 1rem;
+    }
+  }
+}
+
+.flag {
+  will-change: transform;
+  z-index: -1;
+  transition: transform 0.1s linear;
+}
+
+.cardContainer:hover .flag,
+.flag:hover {
+  transform: none;
+  z-index: 1;
+  transition: transform 0.1s linear, z-index 0.1s step-end;
+}
+
+.header > a,
+.header > button {
+  margin: 0 0.375rem;
+}
+
+.post {
+  &.hideContent > * {
+    visibility: hidden;
+
+    &.show {
+      visibility: visible;
+    }
+  }
+
+  &.read {
+    border-color: var(--theme-border-subtlest-quaternary);
+    background: var(--theme-background-default);
+    box-shadow: none;
+
+    & .title {
+      color: var(--theme-text-tertiary);
+    }
+  }
+}

@@ -1,0 +1,618 @@
+import type React from 'react';
+import dynamic from 'next/dynamic';
+import { LazyModal } from './common/types';
+
+export type CloseModalFunc = (
+  e: React.MouseEvent | React.KeyboardEvent | React.FormEvent,
+) => void;
+
+const SquadMemberModal = dynamic(
+  () => import(/* webpackChunkName: "squadMemberModal" */ './SquadMemberModal'),
+);
+const UpvotedPopupModal = dynamic(
+  () =>
+    import(/* webpackChunkName: "upvotedPopupModal" */ './UpvotedPopupModal'),
+);
+const RepostsModal = dynamic(
+  () => import(/* webpackChunkName: "repostsModal" */ './RepostsModal'),
+);
+const UserFollowersModal = dynamic(
+  () =>
+    import(/* webpackChunkName: "userFollowersModal" */ './UserFollowersModal'),
+);
+const UserFollowingModal = dynamic(
+  () =>
+    import(/* webpackChunkName: "userFollowingModal" */ './UserFollowingModal'),
+);
+const SquadTourModal = dynamic(
+  () => import(/* webpackChunkName: "squadTourModal" */ './SquadTourModal'),
+);
+const SquadPromotionModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "squadPromotionModal" */ './squads/SquadPromotionModal'
+    ),
+);
+
+const ReadingHistoryModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "readingHistoryModal" */ './post/ReadingHistoryModal'
+    ),
+);
+
+const CreateSharedPostModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "createSharedPostModal" */ './post/CreateSharedPostModal'
+    ),
+);
+
+const SmartComposerModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "smartComposerModal" */ './post/SmartComposerModal'
+    ),
+);
+
+const ReportPostModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "reportPostModal" */ './report/ReportPostModal'
+    ),
+);
+
+const ReportCommentModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "reportCommentModal" */ './report/ReportCommentModal'
+    ),
+);
+
+const SquadNotificationsModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "squadNotificationsModal" */ './squads/SquadNotificationsModal'
+    ),
+);
+
+const NewSource = dynamic(
+  () => import(/* webpackChunkName: "newSourceModal" */ './NewSourceModal'),
+);
+
+const VerifySession = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "verifySessionModal" */ '../auth/VerifySessionModal'
+    ),
+);
+
+const VideoModal = dynamic(
+  () => import(/* webpackChunkName: "videoModal" */ './VideoModal'),
+);
+
+const GenericReferralModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "genericReferralModal" */ './referral/GenericReferralModal'
+    ),
+);
+
+const GenericReferralModalV2 = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "genericReferralModalV2" */ './referral/GenericReferralModalV2'
+    ),
+);
+
+const NewStreakModal = dynamic(
+  () =>
+    import(/* webpackChunkName: "newStreakModal" */ './streaks/NewStreakModal'),
+);
+
+const ReputationPrivilegesModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "reputationPrivilegesModal" */ './ReputationPrivilegesModal'
+    ),
+);
+
+const MarketingCtaModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "marketingCtaModal" */ '../marketing/cta/MarketingCtaModal'
+    ),
+);
+
+const ShareModal = dynamic(
+  () => import(/* webpackChunkName: "shareModal" */ './ShareModal'),
+);
+
+const PrivilegedMemberModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "privilegedMembersModal" */ './squads/PrivilegedMembersModal'
+    ),
+);
+const TopMembersModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "topMembersModal" */ './squads/TopMembersModal'
+    ),
+);
+
+const BookmarkReminderModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "bookmarkReminderModal" */ './post/BookmarkReminderModal'
+    ),
+);
+
+const StreakRecoverModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "streakRecoverModal" */ './streaks/StreakRecoverModal'
+    ),
+);
+
+const SlackIntegrationModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "slackIntegrationModal" */ './SlackIntegrationModal/SlackIntegrationModal'
+    ),
+);
+
+const ReportSourceModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "reportSourceModal" */ './report/ReportSourceModal'
+    ),
+);
+
+const ReasonSelectionModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "reasonSelectionModal" */ './report/ReasonSelectionModal'
+    ),
+);
+
+const PostModerationModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "postModerationModal" */ './squads/PostModerationModal'
+    ),
+);
+const NewSquadModal = dynamic(
+  () =>
+    import(/* webpackChunkName: "newSquadModal" */ './squads/NewSquadModal'),
+);
+const TopReaderBadgeModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "topReaderBadgeModal" */ './badges/TopReaderBadgeModal'
+    ),
+);
+
+const BookmarkFolderSoonModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "bookmarkFolderSoonModal" */ './soon/BookmarkFolderSoonModal'
+    ),
+);
+
+const BookmarkFolderModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "bookmarkFolderModal" */ './bookmark/BookmarkFolderModal'
+    ),
+);
+
+const ClickbaitShieldModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "clickbaitShieldModal" */ './ClickbaitShieldModal'
+    ),
+);
+const MoveBookmarkModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "moveBookmarkModal" */ './bookmark/MoveBookmarkModal'
+    ),
+);
+
+const AddToCustomFeedModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "addToCustomFeedModal" */ './feed/AddToCustomFeedModal'
+    ),
+);
+
+const CookieConsentModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "cookieConsentModal" */ './user/CookieConsentModal'
+    ),
+);
+
+const ReportUserModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "reportUserModal" */ './report/ReportUserModal'
+    ),
+);
+
+const PlusMarketingModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "plusMarketingModal" */ '../plus/PlusMarketingModal'
+    ),
+);
+
+const GiftPlusModal = dynamic(
+  () => import(/* webpackChunkName: "giftPlusModal" */ '../plus/GiftPlusModal'),
+);
+
+const GiftReceivedPlusModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "giftReceivedPlusModal" */ '../plus/GiftReceivedPlusModal'
+    ),
+);
+
+const GiveAwardModal = dynamic(
+  () =>
+    import(/* webpackChunkName: "giveAwardModal" */ './award/GiveAwardModal'),
+);
+
+const ContentModal = dynamic(
+  () => import(/* webpackChunkName: "contentModal" */ './ContentModal'),
+);
+
+const CustomLinksModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "customLinksModal" */ '../../features/shortcuts/components/modals/CustomLinksModal'
+    ),
+);
+
+const ShortcutEditModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "shortcutEditModal" */ '../../features/shortcuts/components/modals/ShortcutEditModal'
+    ),
+);
+
+const ShortcutsManageModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "shortcutsManageModal" */ '../../features/shortcuts/components/modals/ShortcutsManageModal'
+    ),
+);
+
+const ImportPickerModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "importPickerModal" */ '../../features/shortcuts/components/modals/ImportPickerModal'
+    ),
+);
+
+const ListAwardsModal = dynamic(() =>
+  import(
+    /* webpackChunkName: "listAwardsModal" */ './award/ListAwardsModal'
+  ).then((mod) => mod.ListAwardsModal),
+);
+
+const AdsDashboardModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "adsDashboardModal" */ '../../features/boost/AdsDashboardModal'
+    ),
+);
+
+const BoostSquadModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "boostSquadModal" */ '../../features/boost/BoostSquadModal'
+    ),
+);
+
+const BoostPostModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "boostPostModal" */ '../../features/boost/BoostPostModal'
+    ),
+);
+
+const BoostedCampaignViewModal = dynamic(() =>
+  import(
+    /* webpackChunkName: "boostedCampaignViewModal" */ '../../features/boost/BoostedViewModal'
+  ).then((mod) => mod.BoostedViewModal),
+);
+
+const FetchBoostedPostViewModal = dynamic(() =>
+  import(
+    /* webpackChunkName: "fetchBoostedViewModal" */ '../../features/boost/BoostedViewModal'
+  ).then((mod) => mod.FetchBoostedViewModal),
+);
+
+const OrganizationInviteMemberModal = dynamic(() =>
+  import(
+    /* webpackChunkName: "inviteMemberModal" */ '../../features/organizations/components/InviteMemberModal'
+  ).then((mod) => mod.InviteMemberModal),
+);
+
+const OrganizationManageSeatsModal = dynamic(() =>
+  import(
+    /* webpackChunkName: "manageSeatsModal" */ '../../features/organizations/components/manageSeats/Modal'
+  ).then((mod) => mod.ManageSeatsModal),
+);
+
+const ActionSuccessModal = dynamic(() =>
+  import(
+    /* webpackChunkName: "actionSuccessModal" */ './utils/ActionSuccessModal'
+  ).then((mod) => mod.ActionSuccessModal),
+);
+
+const SquadNotificationSettingsModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "squadNotificationSettingsModal" */ './SquadNotificationSettingsModal'
+    ),
+);
+
+const OpportunityEditModal = dynamic(() =>
+  import(
+    /* webpackChunkName: "opportunityEditModal" */ '../opportunity/OpportunityEditModal/OpportunityEditModal'
+  ).then((mod) => mod.OpportunityEditModal),
+);
+
+const OpportunityEditRecruiterModal = dynamic(() =>
+  import(
+    /* webpackChunkName: "opportunityEditRecruiterModal" */ '../opportunity/OpportunityEditModal/OpportunityEditRecruiterModal'
+  ).then((mod) => mod.OpportunityEditRecruiterModal),
+);
+
+const OpportunityReimportModal = dynamic(() =>
+  import(
+    /* webpackChunkName: "opportunityReimportModal" */ '../opportunity/OpportunityEditModal/OpportunityReimportModal'
+  ).then((mod) => mod.OpportunityReimportModal),
+);
+
+const DirtyFormModal = dynamic(
+  () => import(/* webpackChunkName: "dirtyFormModal" */ './DirtyFormModal'),
+);
+
+const JobOpportunityModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "jobOpportunityModal" */ './JobOpportunityModal'
+    ),
+);
+
+const RecruiterIntroModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "recruiterIntroModal" */ './recruiter/RecruiterIntroModal'
+    ),
+);
+
+const RecruiterTrustModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "recruiterTrustModal" */ './recruiter/RecruiterTrustModal'
+    ),
+);
+
+const RecruiterJobLinkModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "recruiterJobLinkModal" */ './recruiter/RecruiterJobLinkModal'
+    ),
+);
+
+const RecruiterSignInModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "recruiterSignInModal" */ './recruiter/RecruiterSignInModal'
+    ),
+);
+
+const VerifyExperienceModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "verifyExperienceModal" */ './VerifyExperienceModal'
+    ),
+);
+
+const SlackChannelConfirmationModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "slackChannelConfirmationModal" */ './recruiter/SlackChannelConfirmationModal'
+    ),
+);
+
+const RecruiterSeatsModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "recruiterSeatsModal" */ './recruiter/RecruiterSeatsModal'
+    ),
+);
+
+const CandidateSignInModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "candidateSignInModal" */ './candidate/CandidateSignInModal'
+    ),
+);
+
+const FeedbackModal = dynamic(
+  () => import(/* webpackChunkName: "feedbackModal" */ './FeedbackModal'),
+);
+
+const HotAndColdModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "hotAndColdModal" */ './hotTakes/HotAndColdModal'
+    ),
+);
+const AchievementSyncPromptModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "achievementSyncPromptModal" */ './AchievementSyncPromptModal'
+    ),
+);
+
+const AchievementPickerModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "achievementPickerModal" */ './AchievementPickerModal'
+    ),
+);
+
+const AchievementCompletionModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "achievementCompletionModal" */ './AchievementCompletionModal'
+    ),
+);
+
+const CompareAchievementsModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "compareAchievementsModal" */ './achievement/CompareAchievementsModal'
+    ),
+);
+
+const AchievementShowcaseModal = dynamic(
+  () =>
+    import(
+      /* webpackChunkName: "achievementShowcaseModal" */ './AchievementShowcaseModal'
+    ),
+);
+
+const IntroQuestModal = dynamic(
+  () => import(/* webpackChunkName: "introQuestModal" */ './IntroQuestModal'),
+);
+
+export const modals = {
+  [LazyModal.SquadMember]: SquadMemberModal,
+  [LazyModal.UpvotedPopup]: UpvotedPopupModal,
+  [LazyModal.RepostsPopup]: RepostsModal,
+  [LazyModal.SquadTour]: SquadTourModal,
+  [LazyModal.ReadingHistory]: ReadingHistoryModal,
+  [LazyModal.SquadPromotion]: SquadPromotionModal,
+  [LazyModal.CreateSharedPost]: CreateSharedPostModal,
+  [LazyModal.SmartComposer]: SmartComposerModal,
+  [LazyModal.ReportPost]: ReportPostModal,
+  [LazyModal.ReportComment]: ReportCommentModal,
+  [LazyModal.SquadNotifications]: SquadNotificationsModal,
+  [LazyModal.NewSource]: NewSource,
+  [LazyModal.VerifySession]: VerifySession,
+  [LazyModal.GenericReferral]: GenericReferralModal,
+  [LazyModal.GenericReferralV2]: GenericReferralModalV2,
+  [LazyModal.Video]: VideoModal,
+  [LazyModal.NewStreak]: NewStreakModal,
+  [LazyModal.ReputationPrivileges]: ReputationPrivilegesModal,
+  [LazyModal.MarketingCta]: MarketingCtaModal,
+  [LazyModal.Share]: ShareModal,
+  [LazyModal.PrivilegedMembers]: PrivilegedMemberModal,
+  [LazyModal.TopMembers]: TopMembersModal,
+  [LazyModal.BookmarkReminder]: BookmarkReminderModal,
+  [LazyModal.RecoverStreak]: StreakRecoverModal,
+  [LazyModal.SlackIntegration]: SlackIntegrationModal,
+  [LazyModal.ReportSource]: ReportSourceModal,
+  [LazyModal.UserFollowersModal]: UserFollowersModal,
+  [LazyModal.UserFollowingModal]: UserFollowingModal,
+  [LazyModal.ReasonSelection]: ReasonSelectionModal,
+  [LazyModal.PostModeration]: PostModerationModal,
+  [LazyModal.NewSquad]: NewSquadModal,
+  [LazyModal.TopReaderBadge]: TopReaderBadgeModal,
+  [LazyModal.BookmarkFolderSoon]: BookmarkFolderSoonModal,
+  [LazyModal.BookmarkFolder]: BookmarkFolderModal,
+  [LazyModal.ClickbaitShield]: ClickbaitShieldModal,
+  [LazyModal.MoveBookmark]: MoveBookmarkModal,
+  [LazyModal.AddToCustomFeed]: AddToCustomFeedModal,
+  [LazyModal.CookieConsent]: CookieConsentModal,
+  [LazyModal.ReportUser]: ReportUserModal,
+  [LazyModal.PlusMarketing]: PlusMarketingModal,
+  [LazyModal.GiftPlus]: GiftPlusModal,
+  [LazyModal.GiftPlusReceived]: GiftReceivedPlusModal,
+  [LazyModal.GiveAward]: GiveAwardModal,
+  [LazyModal.ContentModal]: ContentModal,
+  [LazyModal.CustomLinks]: CustomLinksModal,
+  [LazyModal.ShortcutEdit]: ShortcutEditModal,
+  [LazyModal.ShortcutsManage]: ShortcutsManageModal,
+  [LazyModal.ImportPicker]: ImportPickerModal,
+  [LazyModal.ListAwards]: ListAwardsModal,
+  [LazyModal.AdsDashboard]: AdsDashboardModal,
+  [LazyModal.BoostPost]: BoostPostModal,
+  [LazyModal.BoostSquad]: BoostSquadModal,
+  [LazyModal.BoostedCampaignView]: BoostedCampaignViewModal,
+  [LazyModal.FetchBoostedPostView]: FetchBoostedPostViewModal,
+  [LazyModal.OrganizationInviteMember]: OrganizationInviteMemberModal,
+  [LazyModal.OrganizationManageSeats]: OrganizationManageSeatsModal,
+  [LazyModal.ActionSuccess]: ActionSuccessModal,
+  [LazyModal.SquadNotificationSettings]: SquadNotificationSettingsModal,
+  [LazyModal.OpportunityEdit]: OpportunityEditModal,
+  [LazyModal.OpportunityEditRecruiter]: OpportunityEditRecruiterModal,
+  [LazyModal.OpportunityReimport]: OpportunityReimportModal,
+  [LazyModal.DirtyForm]: DirtyFormModal,
+  [LazyModal.JobOpportunity]: JobOpportunityModal,
+  [LazyModal.RecruiterIntro]: RecruiterIntroModal,
+  [LazyModal.RecruiterTrust]: RecruiterTrustModal,
+  [LazyModal.RecruiterJobLink]: RecruiterJobLinkModal,
+  [LazyModal.RecruiterSignIn]: RecruiterSignInModal,
+  [LazyModal.VerifyExperience]: VerifyExperienceModal,
+  [LazyModal.SlackChannelConfirmation]: SlackChannelConfirmationModal,
+  [LazyModal.RecruiterSeats]: RecruiterSeatsModal,
+  [LazyModal.CandidateSignIn]: CandidateSignInModal,
+  [LazyModal.Feedback]: FeedbackModal,
+  [LazyModal.AchievementSyncPrompt]: AchievementSyncPromptModal,
+  [LazyModal.HotAndCold]: HotAndColdModal,
+  [LazyModal.AchievementPicker]: AchievementPickerModal,
+  [LazyModal.AchievementCompletion]: AchievementCompletionModal,
+  [LazyModal.CompareAchievements]: CompareAchievementsModal,
+  [LazyModal.AchievementShowcase]: AchievementShowcaseModal,
+  [LazyModal.IntroQuests]: IntroQuestModal,
+};
+
+type GetComponentProps<T> = T extends
+  | React.ComponentType<infer P>
+  | React.Component<infer P>
+  ? P
+  : never;
+
+export type ModalsType = typeof modals;
+
+export type LazyPropTypes = Partial<
+  {
+    [K in keyof ModalsType]: GetComponentProps<ModalsType[K]>;
+  }[keyof ModalsType]
+>;
+
+type LazyModalComponentType<K extends LazyModal> = Omit<
+  GetComponentProps<ModalsType[K]>,
+  'isOpen' | 'onRequestClose'
+>;
+
+type RequiredKeys<T> = {
+  [K in keyof T]: Record<string, never> extends { [P in K]: T[K] } ? never : K;
+}[keyof T];
+
+type NonOptional<T> = Pick<T, RequiredKeys<T>>;
+
+export type LazyModalType<T extends keyof ModalsType> = {
+  [K in keyof ModalsType]: NonOptional<
+    LazyModalComponentType<K>
+  > extends Record<string, never>
+    ? {
+        type: K;
+        persistOnRouteChange?: boolean;
+        props?: LazyModalComponentType<K>;
+      }
+    : {
+        type: K;
+        persistOnRouteChange?: boolean;
+        props: LazyModalComponentType<K>;
+      };
+}[T];

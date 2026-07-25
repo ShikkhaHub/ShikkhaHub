@@ -1,0 +1,325 @@
+import type { MouseEvent, ReactElement } from 'react';
+import React, { useEffect } from 'react';
+import classNames from 'classnames';
+import type { InfiniteData } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import type { Squad } from '../../graphql/sources';
+import { SourceMemberRole } from '../../graphql/sources';
+import type { ButtonProps } from '../buttons/Button';
+import { Button, ButtonVariant } from '../buttons/Button';
+import { useAuthContext } from '../../contexts/AuthContext';
+import { useToastNotification } from '../../hooks/useToastNotification';
+import { useJoinSquad, useLeaveSquad } from '../../hooks';
+import { labels } from '../../lib';
+import { useLogContext } from '../../contexts/LogContext';
+import type { Origin } from '../../lib/log';
+import { LogEvent, TargetType } from '../../lib/log';
+import { SimpleTooltip } from '../tooltips/SimpleTooltip';
+import type { UserShortProfile } from '../../lib/user';
+import { generateQueryKey, RequestKey } from '../../lib/query';
+import { AuthTriggers } from '../../lib/auth';
+import useShowFollowAction from '../../hooks/useShowFollowAction';
+import { ContentPreferenceType } from '../../graphql/contentPreference';
+import type { SourcesQueryData } from '../../hooks/source/useSources';
+
+interface ClassName {
+  button?: string;
+}
+
+interface Copy {
+  join: string;
+  leave: string;
+  view: string;
+  blockedTooltip: string;
+}
+
+interface SquadActionButtonProps extends Pick<ButtonProps<'button'>, 'size'> {
+  className?: ClassName;
+  squad: Squad;
+  copy?: Partial<Copy>;
+  origin: Origin;
+  inviterMember?: Pick<UserShortProfile, 'id'>;
+  onSuccess?: () => void;
+  buttonVariants?: ButtonVariant[];
+  alwaysShow?: boolean;
+}
+
+type SquadDirectoryData = InfiniteData<SourcesQueryData<Squad>>;
+
+export const updateSquadMembershipInListData = (
+  data: SquadDirectoryData,
+  squadId: string,
+  updateSquad: (currentSquad: Squad) => Squad,
+): SquadDirectoryData => ({
+  ...data,
+  pages: data.pages.map((page) => ({
+    ...page,
+    sources: {
+      ...page.sources,
+      edges: page.sources.edges.map((edge) => {
+        if (edge.node.id !== squadId) {
+          return edge;
+        }
+
+        return {
+          ...edge,
+          node: updateSquad(edge.node),
+        };
+      }),
+    },
+  })),
+});
+
+export const updateSquadDirectoryCache = ({
+  queryClient,
+  squadId,
+  categoryId,
+  featured,
+  updateSquad,
+}: {
+  queryClient: ReturnType<typeof useQueryClient>;
+  squadId: string;
+  categoryId?: string;
+  featured?: boolean;
+  updateSquad: (currentSquad: Squad) => Squad;
+}) => {
+  queryClient.setQueriesData<SquadDirectoryData>(
+    {
+      queryKey: generateQueryKey(
+        RequestKey.Sources,
+        undefined,
+        featured,
+        true,
+        categoryId,
+      ),
+    },
+    (currentData) => {
+      if (!currentData) {
+        return currentData;
+      }
+
+      return updateSquadMembershipInListData(currentData, squadId, updateSquad);
+    },
+  );
+};
+
+export const SimpleSquadJoinButton = <T extends 'a' | 'button'>({
+  className,
+  squad,
+  onClick,
+  children,
+  origin,
+  inviterMember,
+  ...buttonProps
+}: SquadActionButtonProps & ButtonProps<T>): ReactElement => {
+  const { logEvent } = useLogContext();
+
+  useEffect(() => {
+    if (!squad) {
+      return;
+    }
+
+    logEvent({
+      event_name: LogEvent.Impression,
+      target_type: TargetType.SquadJoinButton,
+      extra: JSON.stringify({
+        squad: squad.id,
+        origin,
+        squad_type: squad.public ? 'public' : 'private',
+      }),
+    });
+    // @NOTE see https://shikkhahub.atlassian.net/l/cp/dK9h1zoM
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <Button
+      {...buttonProps}
+      className={classNames(className)}
+      onClick={(event: React.MouseEvent<HTMLElement>) => {
+        if (!squad.currentMember) {
+          logEvent({
+            event_name: LogEvent.ClickJoinSquad,
+            extra: JSON.stringify({
+              inviter: inviterMember?.id,
+              squad: squad.id,
+            }),
+          });
+        }
+
+        (onClick as React.MouseEventHandler<HTMLElement>)?.(event);
+      }}
+    >
+      {children}
+    </Button>
+  );
+};
+
+export const SquadActionButton = ({
+  className = {},
+  squad,
+  copy = {},
+  origin,
+  onSuccess,
+  buttonVariants = [ButtonVariant.Primary, ButtonVariant.Secondary],
+  alwaysShow = false,
+  ...rest
+}: SquadActionButtonProps): ReactElement | null => {
+  const { showActionBtn } = useShowFollowAction({
+    entityId: squad?.id,
+    entityType: ContentPreferenceType.Source,
+  });
+  const {
+    join = 'Join Squad',
+    leave = 'Leave',
+    blockedTooltip = 'You are not allowed to join the Squad',
+  } = copy;
+  const [joinVariant, memberVariant] = buttonVariants;
+  const queryClient = useQueryClient();
+  const { displayToast } = useToastNotification();
+  const { user, showLogin } = useAuthContext();
+  const isMemberBlocked =
+    squad?.currentMember?.role === SourceMemberRole.Blocked;
+  const isCurrentMember = !!squad?.currentMember && !isMemberBlocked;
+  const squadId = squad?.id;
+  const currentMember = user
+    ? ({
+        role: SourceMemberRole.Member,
+        referralToken: '',
+        user,
+        source: squad,
+      } as Squad['currentMember'])
+    : null;
+
+  const { mutateAsync: joinSquad, isPending: isJoiningSquad } = useMutation({
+    mutationFn: useJoinSquad({ squad }),
+    onError: () => {
+      displayToast(labels.error.generic);
+    },
+    onMutate: () => {
+      if (!squadId) {
+        return;
+      }
+
+      const updateJoinedSquad = (currentSquad: Squad): Squad => ({
+        ...currentSquad,
+        currentMember: currentMember ?? undefined,
+        membersCount: currentSquad.currentMember
+          ? currentSquad.membersCount
+          : currentSquad.membersCount + 1,
+      });
+      updateSquadDirectoryCache({
+        queryClient,
+        squadId,
+        categoryId: squad.category?.id,
+        updateSquad: updateJoinedSquad,
+      });
+      updateSquadDirectoryCache({
+        queryClient,
+        squadId,
+        featured: true,
+        updateSquad: updateJoinedSquad,
+      });
+    },
+    onSuccess,
+  });
+
+  const { mutateAsync: leaveSquad, isPending: isLeavingSquad } = useMutation({
+    mutationFn: useLeaveSquad({ squad }),
+    onSuccess: (left) => {
+      if (!left) {
+        return;
+      }
+
+      if (!squadId) {
+        return;
+      }
+
+      displayToast('👋 You have left the Squad.');
+
+      const queryKey = generateQueryKey(RequestKey.Squad, user, squad.handle);
+      const currenSquad = queryClient.getQueryData<Squad>(queryKey);
+
+      if (currenSquad) {
+        queryClient.setQueryData(queryKey, {
+          ...currenSquad,
+          currentMember: undefined,
+          membersCount: currenSquad.membersCount - 1,
+        });
+      }
+      const updateLeftSquad = (currentSquad: Squad): Squad => ({
+        ...currentSquad,
+        currentMember: undefined,
+        membersCount: currentSquad.currentMember
+          ? currentSquad.membersCount - 1
+          : currentSquad.membersCount,
+      });
+      updateSquadDirectoryCache({
+        queryClient,
+        squadId,
+        categoryId: squad.category?.id,
+        updateSquad: updateLeftSquad,
+      });
+      updateSquadDirectoryCache({
+        queryClient,
+        squadId,
+        featured: true,
+        updateSquad: updateLeftSquad,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['squadMembersInitial', squad.handle],
+      });
+    },
+    onError: () => {
+      displayToast(labels.error.generic);
+    },
+  });
+
+  const isLoading = isJoiningSquad || isLeavingSquad;
+
+  const onLeaveSquad = (e: MouseEvent) => {
+    e.stopPropagation();
+    if (!user) {
+      showLogin({
+        trigger: AuthTriggers.JoinSquad,
+        options: {
+          onLoginSuccess: () => joinSquad(),
+          onRegistrationSuccess: () => joinSquad(),
+        },
+      });
+
+      return;
+    }
+
+    if (isCurrentMember) {
+      leaveSquad({});
+    } else {
+      joinSquad();
+    }
+  };
+
+  if (!showActionBtn && !alwaysShow) {
+    return null;
+  }
+
+  return (
+    <SimpleTooltip
+      sticky
+      placement="bottom"
+      disabled={!isMemberBlocked}
+      content={blockedTooltip}
+    >
+      <SimpleSquadJoinButton
+        {...rest}
+        variant={isCurrentMember ? memberVariant : joinVariant}
+        className={className?.button}
+        squad={squad}
+        disabled={isMemberBlocked || isLoading}
+        onClick={onLeaveSquad}
+        origin={origin}
+      >
+        {isCurrentMember ? leave : join}
+      </SimpleSquadJoinButton>
+    </SimpleTooltip>
+  );
+};

@@ -1,0 +1,341 @@
+import { apiUrl, graphqlUrl } from './config';
+import type { ProfileV2 } from '../graphql/users';
+import {
+  PROFILE_V2_EXTRA_QUERY,
+  USER_BY_ID_STATIC_FIELDS_QUERY,
+} from '../graphql/users';
+import type { Company } from './userCompany';
+import type { ContentPreference } from '../graphql/contentPreference';
+import type { TopReader } from '../components/badges/TopReaderBadge';
+import type { SubscriptionProvider, SubscriptionStatus } from './plus';
+import type { FeaturedAward, UserTransactionPublic } from '../graphql/njord';
+import type { Post } from '../graphql/posts';
+import type { TLocation } from '../graphql/autocomplete';
+import { generateQueryKey, RequestKey, StaleTime } from './query';
+
+export enum Roles {
+  Moderator = 'moderator',
+}
+
+export const isSystemModerator = (user?: { roles?: Roles[] }): boolean => {
+  return user?.roles?.includes(Roles.Moderator) ?? false;
+};
+
+export interface UserSocialLink {
+  platform: string;
+  url: string;
+}
+
+export interface AnonymousUser {
+  id: string;
+  firstVisit?: string;
+  referrer?: string;
+  isFirstVisit?: boolean;
+  referralId?: string;
+  referralOrigin?: string;
+  email?: string; // Needed for users that need to verify
+  shouldVerify?: boolean;
+}
+
+export interface PublicProfile {
+  id: string;
+  name: string;
+  username?: string;
+  socialLinks?: UserSocialLink[];
+  bio?: string;
+  createdAt: string;
+  premium: boolean;
+  image: string;
+  reputation: number;
+  permalink: string;
+  cover?: string;
+  readmeHtml?: string;
+  readme?: string;
+  companies?: Company[];
+  contentPreference?: ContentPreference;
+  isPlus?: boolean;
+  plusMemberSince?: Date;
+  experienceLevel?: keyof typeof UserExperienceLevel;
+  location?: TLocation;
+  noindex?: boolean;
+}
+
+export enum UserExperienceLevel {
+  LESS_THAN_1_YEAR = 'Aspiring engineer (<1 year)',
+  MORE_THAN_1_YEAR = 'Entry-level (1 year)',
+  MORE_THAN_2_YEARS = 'Mid-level (2-3 years)',
+  MORE_THAN_4_YEARS = 'Experienced (4-5 years)',
+  MORE_THAN_6_YEARS = 'Highly experienced (6-10 years)',
+  MORE_THAN_10_YEARS = `I've suffered enough (10+ years)`,
+  NOT_ENGINEER = `I'm not an engineer`,
+}
+
+export const ExperienceLevelOptions = Object.entries(UserExperienceLevel).map(
+  ([value, label]) => ({ label, value }),
+);
+
+export enum RecruiterUserExperienceLevel {
+  LESS_THAN_1_YEAR = '<1 year',
+  MORE_THAN_1_YEAR = '1 year',
+  MORE_THAN_2_YEARS = '2-3 years',
+  MORE_THAN_4_YEARS = '4-5 years',
+  MORE_THAN_6_YEARS = '6-10 years',
+  MORE_THAN_10_YEARS = '10+ years',
+  NOT_ENGINEER = 'Non-technical',
+}
+
+export const getRecruiterExperienceLevelLabel = (
+  level: string | undefined,
+): string | undefined => {
+  if (!level) {
+    return undefined;
+  }
+  return RecruiterUserExperienceLevel[
+    level as keyof typeof RecruiterUserExperienceLevel
+  ];
+};
+
+export interface UserProfile {
+  name: string;
+  email?: string;
+  username?: string;
+  company?: string;
+  title?: string;
+  socialLinks?: UserSocialLink[];
+  bio?: string;
+  acceptedMarketing?: boolean;
+  timezone?: string;
+  cover?: string;
+  experienceLevel?: keyof typeof UserExperienceLevel;
+  hideExperience?: boolean;
+  language?: string;
+  defaultFeedId?: string;
+  readme?: string;
+  image?: string;
+  externalLocationId?: string;
+}
+
+export interface UserShortProfile
+  extends Pick<
+    PublicProfile,
+    | 'id'
+    | 'name'
+    | 'image'
+    | 'bio'
+    | 'createdAt'
+    | 'reputation'
+    | 'companies'
+    | 'isPlus'
+    | 'plusMemberSince'
+  > {
+  username: string;
+  permalink: string;
+  contentPreference?: ContentPreference;
+  topReader?: Partial<TopReader>;
+  award?: FeaturedAward;
+  awardTransaction?: UserTransactionPublic;
+}
+
+export type UserFlagsPublic = Partial<{
+  showPlusGift: boolean;
+  cvUploadedAt: Date;
+  lastExtensionUse: string | null;
+}>;
+
+export type UserSubscriptionFlags = Partial<{
+  provider: SubscriptionProvider;
+  status: SubscriptionStatus;
+
+  // StoreKit flags
+  appAccountToken?: string; // StoreKit app account token (UUID)
+}>;
+
+export enum CoresRole {
+  None = 0,
+  ReadOnly = 1,
+  User = 2,
+  Creator = 3,
+}
+
+export interface ProfileCompletion {
+  percentage: number;
+  hasProfileImage: boolean;
+  hasHeadline: boolean;
+  hasExperienceLevel: boolean;
+  hasWork: boolean;
+  hasEducation: boolean;
+}
+
+export interface LoggedUser extends UserProfile, AnonymousUser {
+  image: string;
+  infoConfirmed?: boolean;
+  premium?: boolean;
+  providers: string[];
+  roles?: Roles[];
+  createdAt: string;
+  reputation?: number;
+  permalink: string;
+  username: string;
+  timezone?: string;
+  referralLink?: string;
+  password?: string;
+  acquisitionChannel?: string;
+  experienceLevel?: keyof typeof UserExperienceLevel;
+  isTeamMember?: boolean;
+  isPlus?: boolean;
+  companies?: Company[];
+  contentPreference?: ContentPreference;
+  defaultFeedId?: string;
+  flags?: UserFlagsPublic;
+  subscriptionFlags?: UserSubscriptionFlags;
+  coresRole?: CoresRole;
+  location?: TLocation;
+  balance: {
+    amount: number;
+  };
+  clickbaitTries?: number;
+  hasLocationSet?: boolean;
+  profileCompletion?: ProfileCompletion;
+}
+
+export async function logout(reason: string): Promise<void> {
+  const urlParams = reason ? `?${new URLSearchParams({ reason })}` : '';
+  await fetch(`${apiUrl}/v1/users/logout${urlParams}`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+}
+
+export async function deleteAccount(): Promise<void> {
+  const res = await fetch(`${apiUrl}/v1/users/me`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+
+  if (!res.ok) {
+    throw new Error('Failed to delete account');
+  }
+}
+
+const getProfileRequest = async (id: string) => {
+  const userRes = await fetch(graphqlUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      query: USER_BY_ID_STATIC_FIELDS_QUERY,
+      variables: {
+        id,
+      },
+    }),
+    credentials: 'include',
+  });
+  if (userRes.status === 404) {
+    throw new Error('not found');
+  }
+
+  const response = await userRes.json();
+  return response?.data?.user;
+};
+
+const getProfileV2ExtraRequest = async (
+  id: string,
+): Promise<Omit<ProfileV2, 'user'>> => {
+  const userRes = await fetch(graphqlUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      query: PROFILE_V2_EXTRA_QUERY,
+      variables: {
+        id,
+      },
+    }),
+    credentials: 'include',
+  });
+  if (userRes.status === 404) {
+    throw new Error('not found');
+  }
+
+  const response = await userRes.json();
+  return response?.data;
+};
+
+export async function getProfile(id: string): Promise<PublicProfile> {
+  return await getProfileRequest(id);
+}
+
+export async function getProfileV2Extra(
+  id: string,
+): Promise<Omit<ProfileV2, 'user'>> {
+  return await getProfileV2ExtraRequest(id);
+}
+
+export enum ReferralOriginKey {
+  Squad = 'squad',
+  Organization = 'organization',
+}
+
+export enum LogoutReason {
+  IncomleteOnboarding = 'incomplete onboarding',
+  ManualLogout = 'manual logout',
+}
+
+export const isSpecialUser = ({
+  userId,
+  loggedUserId,
+}: {
+  userId: string;
+  loggedUserId: string | null;
+}): boolean => {
+  return !!userId && ['404', loggedUserId].includes(userId);
+};
+
+export const getFirstName = (name: string): string => {
+  return name?.split?.(' ')?.[0] ?? '';
+};
+
+export const canViewPostAnalytics = ({
+  user,
+  post,
+}: {
+  user?: Pick<LoggedUser, 'id' | 'isTeamMember'>;
+  post?: { author?: Pick<NonNullable<Post['author']>, 'id'> };
+}): boolean => {
+  if (user?.isTeamMember) {
+    return true;
+  }
+
+  return !!user?.id && user.id === post?.author?.id;
+};
+
+export const canViewUserProfileAnalytics = ({
+  user,
+  profileUserId,
+}: {
+  user?: Pick<LoggedUser, 'id' | 'isTeamMember'>;
+  profileUserId?: string;
+}): boolean => {
+  if (user?.isTeamMember) {
+    return true;
+  }
+
+  return !!user?.id && user.id === profileUserId;
+};
+
+export const userProfileQueryOptions = ({ id }: { id: string }) => {
+  return {
+    queryKey: generateQueryKey(
+      RequestKey.Profile,
+      { id },
+      {
+        id,
+      },
+    ),
+    queryFn: () => getProfile(id),
+    staleTime: StaleTime.OneHour,
+    enabled: !!id,
+  };
+};

@@ -1,0 +1,467 @@
+import type { ReactElement } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
+import classNames from 'classnames';
+import {
+  Button,
+  ButtonColor,
+  ButtonVariant,
+} from '@shikkhahub/shared/src/components/buttons/Button';
+import {
+  BookmarkIcon,
+  DiscussIcon as CommentIcon,
+  DownvoteIcon,
+  EyeIcon,
+  FeedbackIcon,
+  FlagIcon,
+  MenuIcon,
+  ShareIcon,
+  UpvoteIcon,
+} from '@shikkhahub/shared/src/components/icons';
+import { Tooltip } from '@shikkhahub/shared/src/components/tooltip/Tooltip';
+import Modal from 'react-modal';
+import { feedback, isTesting } from '@shikkhahub/shared/src/lib/constants';
+import type { PostBootData } from '@shikkhahub/shared/src/lib/boot';
+import { LogEvent, Origin } from '@shikkhahub/shared/src/lib/log';
+import AuthContext from '@shikkhahub/shared/src/contexts/AuthContext';
+import usePersistentContext from '@shikkhahub/shared/src/hooks/usePersistentContext';
+import { useLogContext } from '@shikkhahub/shared/src/contexts/LogContext';
+import { postLogEvent } from '@shikkhahub/shared/src/lib/feed';
+import { useKeyboardNavigation } from '@shikkhahub/shared/src/hooks/useKeyboardNavigation';
+import { useSharePost } from '@shikkhahub/shared/src/hooks/useSharePost';
+import { LazyModal } from '@shikkhahub/shared/src/components/modals/common/types';
+import { useLazyModal } from '@shikkhahub/shared/src/hooks/useLazyModal';
+import { useEventListener } from '@shikkhahub/shared/src/hooks/useEventListener';
+import { UserVote } from '@shikkhahub/shared/src/graphql/posts';
+import {
+  useToastNotification,
+  useVotePost,
+} from '@shikkhahub/shared/src/hooks';
+import type { UpvotedPopupModalProps } from '@shikkhahub/shared/src/components/modals/UpvotedPopupModal';
+import UpvotedPopupModal from '@shikkhahub/shared/src/components/modals/UpvotedPopupModal';
+import { getCompanionWrapper } from '@shikkhahub/shared/src/lib/extension';
+import ShareModal from '@shikkhahub/shared/src/components/modals/ShareModal';
+import type { ShareProps } from '@shikkhahub/shared/src/components/modals/post/common';
+import '@shikkhahub/shared/src/styles/globals.css';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuOptions,
+  DropdownMenuTrigger,
+} from '@shikkhahub/shared/src/components/dropdown/DropdownMenu';
+import type { MenuItemProps } from '@shikkhahub/shared/src/components/dropdown/common';
+import { MenuIcon as WrapperMenuIcon } from '@shikkhahub/shared/src/components/MenuIcon';
+import type { PromptOptions } from '@shikkhahub/shared/src/hooks/usePrompt';
+import { usePrompt } from '@shikkhahub/shared/src/hooks/usePrompt';
+import type { ReportedCallback } from '@shikkhahub/shared/src/components/modals';
+import { ReportPostModal } from '@shikkhahub/shared/src/components/modals';
+import { labels } from '@shikkhahub/shared/src/lib';
+import useCompanionActions from './useCompanionActions';
+import CompanionToggle from './CompanionToggle';
+
+if (!isTesting) {
+  Modal.setAppElement('daily-companion-app');
+}
+
+type CompanionMenuProps = {
+  post: PostBootData;
+  companionHelper: boolean;
+  setPost: (T) => void;
+  companionState: boolean;
+  onOptOut: () => void;
+  setCompanionState: (T) => void;
+  verticalPosition: number;
+  setVerticalPosition: (position: number) => void;
+  isDragging: boolean;
+  setIsDragging: (dragging: boolean) => void;
+  onOpenComments?: () => void;
+};
+
+export default function CompanionMenu({
+  post,
+  companionHelper,
+  setPost,
+  companionState,
+  onOptOut,
+  setCompanionState,
+  verticalPosition,
+  setVerticalPosition,
+  isDragging,
+  setIsDragging,
+}: CompanionMenuProps): ReactElement {
+  const { modal, closeModal } = useLazyModal();
+  const { logEvent } = useLogContext();
+  const { user } = useContext(AuthContext);
+  const { showPrompt } = usePrompt();
+  const [reportModal, setReportModal] = useState<boolean>();
+  const { displayToast } = useToastNotification();
+  const dragStartRef = useRef({ y: 0, initialY: 0 });
+
+  const [showCompanionHelper, setShowCompanionHelper] = usePersistentContext(
+    'companion_helper',
+    companionHelper,
+  );
+  const updatePost = async ({ update, event }) => {
+    const oldPost = post;
+    setPost({
+      ...post,
+      ...update,
+    });
+    logEvent(
+      postLogEvent(event, post, {
+        extra: { origin: Origin.CompanionContextMenu },
+      }),
+    );
+    return () => setPost(oldPost);
+  };
+
+  const { toggleUpvote, toggleDownvote } = useVotePost();
+  const { openSharePost } = useSharePost(Origin.Companion);
+  const {
+    bookmark,
+    removeBookmark,
+    blockSource,
+    disableCompanion,
+    removeCompanionHelper,
+    toggleCompanionExpanded,
+  } = useCompanionActions({
+    onBookmarkMutate: () =>
+      updatePost({
+        update: { bookmarked: true },
+        event: LogEvent.BookmarkPost,
+      }),
+    onRemoveBookmarkMutate: () =>
+      updatePost({
+        update: { bookmarked: false },
+        event: LogEvent.RemovePostBookmark,
+      }),
+  });
+
+  /**
+   * Use a cleanup effect to always set the local cache helper state to false on destroy
+   */
+  useEffect(() => {
+    if (user) {
+      removeCompanionHelper({});
+    }
+    const cleanup = () => {
+      setShowCompanionHelper(false);
+    };
+    window.addEventListener('beforeunload', cleanup);
+    return () => cleanup();
+    // @NOTE see https://shikkhahub.atlassian.net/l/cp/dK9h1zoM
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toggleCompanion = () => {
+    setShowCompanionHelper(false);
+    logEvent({
+      event_name: `${companionState ? 'close' : 'open'} companion`,
+    });
+    toggleCompanionExpanded({ companionExpandedValue: !companionState });
+    setCompanionState((state) => !state);
+  };
+
+  const onShare = () => openSharePost({ post });
+
+  const optOut = async () => {
+    const options: PromptOptions = {
+      title: 'Disable the companion widget?',
+      description: 'You can always re-enable it through the customize menu.',
+      okButton: {
+        title: 'Disable',
+      },
+    };
+    if (await showPrompt(options)) {
+      disableCompanion({});
+      onOptOut();
+    }
+  };
+
+  const onToggleUpvote = async () => {
+    if (!user) {
+      window.open(
+        `${process.env.NEXT_PUBLIC_WEBAPP_URL}signup?close=true`,
+        '_blank',
+      );
+
+      return;
+    }
+
+    await toggleUpvote({ payload: post, origin: Origin.CompanionContextMenu });
+  };
+
+  const onToggleDownvote = async () => {
+    if (!user) {
+      window.open(
+        `${process.env.NEXT_PUBLIC_WEBAPP_URL}signup?close=true`,
+        '_blank',
+      );
+
+      return;
+    }
+
+    await toggleDownvote({
+      payload: post,
+      origin: Origin.CompanionContextMenu,
+    });
+  };
+
+  const toggleBookmark = async () => {
+    if (user) {
+      if (!post.bookmarked) {
+        await bookmark({ id: post.id });
+      } else {
+        await removeBookmark({ id: post.id });
+      }
+    } else {
+      window.open(
+        `${process.env.NEXT_PUBLIC_WEBAPP_URL}signup?close=true`,
+        '_blank',
+      );
+    }
+  };
+
+  const tooltipContainerClassName = 'shadow-2 whitespace-nowrap';
+
+  const onEscape = () => {
+    if (!companionState) {
+      return;
+    }
+
+    logEvent({ event_name: 'close companion' });
+    toggleCompanionExpanded({ companionExpandedValue: false });
+    setCompanionState(false);
+  };
+
+  useKeyboardNavigation(window, [['Escape', onEscape]], {
+    disabledModalOpened: true,
+  });
+
+  const onReportPost: ReportedCallback = async (
+    reportedPost,
+    { shouldBlockSource },
+  ): Promise<void> => {
+    if (shouldBlockSource) {
+      blockSource({ id: reportedPost?.source?.id });
+    }
+
+    displayToast(labels.reporting.reportFeedbackText);
+  };
+
+  const options: Array<MenuItemProps> = [
+    {
+      icon: (
+        <WrapperMenuIcon
+          Icon={DownvoteIcon}
+          className={
+            post?.userState?.vote === UserVote.Down &&
+            'text-accent-ketchup-default'
+          }
+          secondary={post?.userState?.vote === UserVote.Down}
+        />
+      ),
+      label: 'Downvote',
+      action: onToggleDownvote,
+      ariaLabel:
+        post?.userState?.vote === UserVote.Down
+          ? 'Remove downvote'
+          : 'Downvote',
+    },
+    {
+      icon: <WrapperMenuIcon Icon={CommentIcon} />,
+      label: 'View discussion',
+      anchorProps: {
+        href: post?.commentsPermalink,
+        target: '_blank',
+      },
+    },
+    {
+      icon: <WrapperMenuIcon Icon={FlagIcon} />,
+      label: 'Report',
+      action: () => setReportModal(true),
+    },
+    {
+      icon: <WrapperMenuIcon Icon={FeedbackIcon} />,
+      label: 'Give us feedback',
+      anchorProps: {
+        href: feedback,
+        target: '_blank',
+      },
+    },
+    {
+      icon: <WrapperMenuIcon Icon={EyeIcon} />,
+      label: 'Disable widget',
+      action: optOut,
+    },
+  ];
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // Prevent dragging if clicking on interactive elements
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, [role="menuitem"]')) {
+      return;
+    }
+
+    setIsDragging(true);
+    dragStartRef.current = {
+      y: e.clientY,
+      initialY: verticalPosition,
+    };
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isDragging) {
+      return;
+    }
+
+    const deltaY = e.clientY - dragStartRef.current.y;
+    const newY = dragStartRef.current.initialY + deltaY;
+
+    // Constrain to viewport bounds (prevent going negative or beyond viewport)
+    // top-[7.5rem] is 120px, so we need to account for that
+    const topOffset = 120; // 7.5rem in pixels
+    const minY = -topOffset; // Allow moving up to the very top (0px from viewport top)
+    const maxY = window.innerHeight - topOffset - 600; // Prevent going below viewport bottom
+    const constrainedY = Math.max(minY, Math.min(maxY, newY));
+
+    setVerticalPosition(constrainedY);
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  useEventListener(isDragging ? window : null, 'mousemove', handleMouseMove);
+  useEventListener(isDragging ? window : null, 'mouseup', handleMouseUp);
+
+  return (
+    <>
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+      <div
+        className={classNames(
+          'group relative my-6 flex w-14 select-none flex-col gap-2 self-center rounded-l-16 border border-border-subtlest-quaternary bg-background-default p-2',
+          isDragging ? 'cursor-grabbing' : 'cursor-grab',
+        )}
+        onMouseDown={handleMouseDown}
+      >
+        {/* Grip indicator dots */}
+        <div className="pointer-events-none absolute left-1/2 top-1 flex -translate-x-1/2 gap-0.5">
+          <div className="h-0.5 w-0.5 rounded-full bg-text-quaternary" />
+          <div className="h-0.5 w-0.5 rounded-full bg-text-quaternary" />
+          <div className="h-0.5 w-0.5 rounded-full bg-text-quaternary" />
+        </div>
+        <CompanionToggle
+          companionState={companionState}
+          isAlertDisabled={!showCompanionHelper}
+          tooltipContainerClassName={tooltipContainerClassName}
+          onToggleCompanion={toggleCompanion}
+        />
+        <Tooltip
+          side="left"
+          content={
+            post?.userState?.vote === UserVote.Up ? 'Remove upvote' : 'Upvote'
+          }
+          className={tooltipContainerClassName}
+        >
+          <Button
+            icon={
+              <UpvoteIcon secondary={post?.userState?.vote === UserVote.Up} />
+            }
+            pressed={post?.userState?.vote === UserVote.Up}
+            onClick={onToggleUpvote}
+            variant={ButtonVariant.Tertiary}
+            color={ButtonColor.Avocado}
+          />
+        </Tooltip>
+        <Tooltip
+          side="left"
+          content="Add comment"
+          className={tooltipContainerClassName}
+        >
+          <Button
+            variant={ButtonVariant.Tertiary}
+            color={ButtonColor.BlueCheese}
+            pressed={post?.commented}
+            icon={<CommentIcon />}
+            onClick={() => {
+              setCompanionState(true);
+
+              const commentBox =
+                getCompanionWrapper()?.querySelector<HTMLElement>(
+                  '.companion-new-comment-button',
+                );
+
+              if (commentBox) {
+                commentBox.click();
+              }
+            }}
+          />
+        </Tooltip>
+        <Tooltip
+          side="left"
+          content={`${post?.bookmarked ? 'Remove from' : 'Save to'} bookmarks`}
+          className={tooltipContainerClassName}
+        >
+          <Button
+            icon={<BookmarkIcon secondary={post?.bookmarked} />}
+            pressed={post?.bookmarked}
+            onClick={toggleBookmark}
+            variant={ButtonVariant.Tertiary}
+            color={ButtonColor.Bun}
+          />
+        </Tooltip>
+        <Tooltip
+          side="left"
+          content="Share post"
+          className={tooltipContainerClassName}
+        >
+          <Button
+            variant={ButtonVariant.Tertiary}
+            color={ButtonColor.Cabbage}
+            onClick={onShare}
+            icon={<ShareIcon />}
+          />
+        </Tooltip>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            tooltip={{ content: 'More options', side: 'left' }}
+            asChild
+          >
+            <Button variant={ButtonVariant.Tertiary} icon={<MenuIcon />} />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuOptions options={options} />
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {modal?.type === LazyModal.Share && (
+          <ShareModal
+            isOpen
+            parentSelector={getCompanionWrapper}
+            onRequestClose={closeModal}
+            {...(modal.props as ShareProps)}
+          />
+        )}
+        {modal?.type === LazyModal.UpvotedPopup && (
+          <UpvotedPopupModal
+            isOpen
+            parentSelector={getCompanionWrapper}
+            onRequestClose={closeModal}
+            {...(modal.props as UpvotedPopupModalProps)}
+          />
+        )}
+      </div>
+      {reportModal && (
+        <ReportPostModal
+          className="z-rank"
+          post={post}
+          parentSelector={getCompanionWrapper}
+          isOpen={!!reportModal}
+          index={1}
+          origin={Origin.CompanionContextMenu}
+          onReported={onReportPost}
+          onRequestClose={() => setReportModal(null)}
+        />
+      )}
+    </>
+  );
+}

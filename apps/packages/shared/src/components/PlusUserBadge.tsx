@@ -1,0 +1,89 @@
+import type { ReactElement } from 'react';
+import React from 'react';
+import type { PublicProfile } from '../lib/user';
+import { SimpleTooltip } from './tooltips';
+import { PlusUser } from './PlusUser';
+import { plusUrl } from '../lib/constants';
+import Link from './utilities/Link';
+import {
+  Typography,
+  TypographyColor,
+  TypographyTag,
+} from './typography/Typography';
+import ConditionalWrapper from './ConditionalWrapper';
+import { DateFormat } from './utilities';
+import { TimeFormatType } from '../lib/dateFormat';
+import { usePlusSubscription } from '../hooks/usePlusSubscription';
+import { LogEvent, TargetId } from '../lib/log';
+import { featurePlusApiLanding } from '../lib/featureManagement';
+import { useConditionalFeature } from '../hooks';
+import { IconSize } from './Icon';
+
+export type Props = {
+  user: Pick<PublicProfile, 'isPlus' | 'plusMemberSince'>;
+  tooltip?: boolean;
+  size?: IconSize;
+};
+
+export const PlusUserBadge = ({
+  user,
+  tooltip = true,
+  size = IconSize.Size16,
+}: Props): ReactElement | null => {
+  const { isPlus, logSubscriptionEvent } = usePlusSubscription();
+  const { value: isApiLanding } = useConditionalFeature({
+    feature: featurePlusApiLanding,
+    shouldEvaluate: !isPlus,
+  });
+  const plusCta = isApiLanding ? 'Get API Access' : 'Level Up with Plus';
+
+  if (!user.isPlus) {
+    return null;
+  }
+
+  return (
+    <ConditionalWrapper
+      condition={tooltip}
+      wrapper={(child) => (
+        <SimpleTooltip
+          interactive
+          content={
+            <>
+              <DateFormat
+                prefix="Plus member since "
+                date={user.plusMemberSince}
+                type={TimeFormatType.PlusMember}
+              />
+              {!isPlus && (
+                <Link passHref href={plusUrl}>
+                  <Typography
+                    tag={TypographyTag.Link}
+                    color={TypographyColor.Link}
+                    onClick={() => {
+                      logSubscriptionEvent({
+                        event_name: LogEvent.UpgradeSubscription,
+                        target_id: TargetId.PlusBadge,
+                      });
+                    }}
+                  >
+                    {plusCta}!
+                  </Typography>
+                </Link>
+              )}
+            </>
+          }
+          placement="top"
+          container={{
+            className: 'text-center flex-col',
+          }}
+        >
+          {child as ReactElement}
+        </SimpleTooltip>
+      )}
+    >
+      <div className="flex items-center">
+        <PlusUser withText={false} iconSize={size} />
+      </div>
+    </ConditionalWrapper>
+  );
+};

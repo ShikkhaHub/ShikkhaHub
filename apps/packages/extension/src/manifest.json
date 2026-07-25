@@ -1,0 +1,103 @@
+{
+  "manifest_version": 3,
+  "__firefox__manifest_version": 2,
+  "version": "0.0.0",
+  "default_locale": "en",
+  "name": "__MSG_extensionName__",
+  "short_name": "daily.dev",
+  "description": "__MSG_extensionDescription__",
+  "homepage_url": "https://daily.dev",
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "__prod__permissions": ["scripting"],
+  "__prod|chrome|opera|edge__host_permissions": [
+    "https://daily.dev/",
+    "https://*.daily.dev/",
+    "https://dailynow.co/",
+    "https://*.dailynow.co/"
+  ],
+  "__firefox|prod__permissions": [
+    "https://daily.dev/",
+    "https://*.daily.dev/",
+    "https://dailynow.co/",
+    "https://*.dailynow.co/"
+  ],
+  "__dev__permissions": ["storage", "scripting"],
+  "__dev__host_permissions": [
+    "http://localhost/",
+    "https://*.local.fylla.dev/",
+    "https://staging.daily.dev/",
+    "https://*.staging.daily.dev/"
+  ],
+  "__firefox|dev__permissions": ["storage", "http://localhost/", "https://*.local.fylla.dev/"],
+  "optional_permissions": ["topSites", "bookmarks", "declarativeNetRequestWithHostAccess"],
+  "__firefox__optional_permissions": ["topSites", "bookmarks", "*://*/*"],
+  "__chrome|opera|edge__optional_host_permissions": [ "*://*/*"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';"
+  },
+  "__firefox__content_security_policy": "script-src 'self'; object-src 'self';",
+  "__chrome|opera|edge__action": {
+    "default_icon": {
+      "16": "icons/action_16.png",
+      "32": "icons/action_32.png"
+    }
+  },
+  "__firefox__browser_action": {
+    "default_icon": {
+      "16": "icons/action_16.png",
+      "32": "icons/action_32.png"
+    }
+  },
+  "background": {
+    "__chrome|opera|edge__service_worker": "js/background.bundle.js",
+    "__firefox__scripts": ["js/background.bundle.js"]
+  },
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://daily.dev/*",
+        "https://*.daily.dev/*"
+      ],
+      "__dev__matches": [
+        "https://daily.dev/*",
+        "https://*.daily.dev/*",
+        "https://staging.daily.dev/*",
+        "https://*.staging.daily.dev/*",
+        "https://*.local.fylla.dev/*"
+      ],
+      "js": ["js/ping.bundle.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["index.html", "companion.html", "js/companion.bundle.js", "css/companion.css"],
+      "matches": ["*://*/*"]
+    },
+    {
+      "resources": ["frame.html", "js/frame.bundle.js"],
+      "matches": [
+        "https://daily.dev/*",
+        "https://*.daily.dev/*",
+        "https://staging.daily.dev/*",
+        "https://*.staging.daily.dev/*"
+      ],
+      "__dev__matches": [
+        "https://staging.daily.dev/*",
+        "https://*.staging.daily.dev/*",
+        "https://*.local.fylla.dev/*",
+        "https://preview.app.daily.dev/*"
+      ]
+    }
+  ],
+
+  "__chrome__offline_enabled": true
+}

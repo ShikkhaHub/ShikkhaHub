@@ -1,0 +1,1461 @@
+import { gql } from 'graphql-request';
+import type { Author, Scout } from './comments';
+import type { Connection } from './common';
+import { gqlClient, gqlRequest } from './common';
+import type { Source, Squad } from './sources';
+import { SourceType } from './sources';
+import type { EmptyResponse } from './emptyResponse';
+import {
+  POST_CODE_SNIPPET_FRAGMENT,
+  RELATED_POST_FRAGMENT,
+  SHARED_POST_INFO_FRAGMENT,
+  CONTENT_EMBED_FRAGMENT,
+  USER_AUTHOR_FRAGMENT,
+} from './fragments';
+import type { Bookmark, BookmarkFolder } from './bookmarks';
+import type { SourcePostModeration } from './squads';
+import type { FeaturedAward } from './njord';
+import { useCanPurchaseCores } from '../hooks/useCoresFeature';
+import { useAuthContext } from '../contexts/AuthContext';
+import type { LoggedUser } from '../lib/user';
+import { PostType } from '../types';
+import { FEED_POST_CONNECTION_FRAGMENT } from './feed';
+import { getPostByIdKey, RequestKey, StaleTime } from '../lib/query';
+import type { LiveRoomPost } from './liveRooms';
+
+export const ACCEPTED_TYPES = 'image/png,image/jpeg,image/webp,image/avif';
+export const acceptedTypesList = ACCEPTED_TYPES.split(',');
+export const MEGABYTE = 1024 * 1024;
+export type TocItem = { text: string; id?: string; children?: TocItem[] };
+export type Toc = TocItem[];
+
+export interface SharedPost extends Post {
+  __typename?: string;
+  id: string;
+  title: string;
+  image: string;
+}
+
+// just re-export for old usage, type should be imported from root types.ts
+export { PostType };
+
+export const internalReadTypes: PostType[] = [
+  PostType.Welcome,
+  PostType.Freeform,
+  PostType.Collection,
+];
+
+export const isInternalReadType = (post: Post): boolean =>
+  internalReadTypes.includes(post?.type);
+
+export const isSharedPostSquadPost = (
+  post: Pick<Post, 'sharedPost'>,
+): boolean => post.sharedPost?.source?.type === SourceType.Squad;
+
+export const isVideoPost = (post: Post | ReadHistoryPost): boolean =>
+  post?.type === PostType.VideoYouTube ||
+  (post?.type === PostType.Share &&
+    post?.sharedPost?.type === PostType.VideoYouTube);
+
+export const isSocialTwitterPost = (
+  post: Pick<Post, 'type'> | undefined | null,
+): boolean => post?.type === PostType.SocialTwitter;
+
+export const isSocialTwitterShareLike = (
+  post: Pick<Post, 'type' | 'subType' | 'sharedPost'> | undefined | null,
+): boolean => {
+  if (!post || !isSocialTwitterPost(post)) {
+    return false;
+  }
+
+  if (!post.sharedPost) {
+    return false;
+  }
+
+  return ['quote', 'repost'].includes(post.subType || '');
+};
+
+export const getSocialTwitterPostType = (
+  post: Pick<Post, 'type' | 'subType' | 'sharedPost'> | undefined | null,
+): PostType | undefined => {
+  if (!isSocialTwitterPost(post)) {
+    return post?.type;
+  }
+
+  return isSocialTwitterShareLike(post) ? PostType.Share : PostType.Freeform;
+};
+
+export const isShareLikePost = (
+  post: Pick<Post, 'type' | 'subType' | 'sharedPost'> | undefined | null,
+): boolean => post?.type === PostType.Share || isSocialTwitterShareLike(post);
+
+export const isPostOrSharedPostTwitter = (
+  post: Pick<Post, 'type' | 'sharedPost'> | undefined | null,
+): boolean =>
+  isSocialTwitterPost(post) || isSocialTwitterPost(post?.sharedPost as Post);
+
+export const isPostUpdated = (
+  post: Pick<Post, 'createdAt' | 'updatedAt'>,
+): boolean => !!post.updatedAt && post.updatedAt !== post.createdAt;
+
+/**
+ * For social:twitter quote posts, resolve to the top tweet (the post itself)
+ * rather than the referenced/shared tweet. For all other post types, fall back
+ * to the shared post when available.
+ */
+export const getPostReadTarget = <
+  T extends Pick<Post, 'type' | 'subType' | 'sharedPost'> &
+    Partial<Pick<Post, 'id'>>,
+>(
+  post: T,
+): { target: T | Post['sharedPost']; parentId?: string } => {
+  const isSocialQuote = isSocialTwitterPost(post) && !!post.sharedPost;
+
+  if (isSocialQuote) {
+    return { target: post };
+  }
+
+  return {
+    target: post.sharedPost || post,
+    parentId: post.sharedPost ? post.id : undefined,
+  };
+};
+
+/**
+ * Resolve the external URL the "Read post" affordance should navigate to.
+ * For shared posts that falls through to the original article's permalink;
+ * otherwise the post's own permalink.
+ */
+export const getReadArticleHref = (
+  post: Pick<Post, 'type' | 'subType' | 'sharedPost' | 'permalink'>,
+): string | undefined =>
+  getPostReadTarget(post).target?.permalink ?? post.permalink;
+
+export const getReadPostButtonText = (post: Post): string => {
+  if (isVideoPost(post)) {
+    return 'Watch video';
+  }
+
+  if (isPostOrSharedPostTwitter(post)) {
+    return 'Read on';
+  }
+
+  return 'Read post';
+};
+
+export const translateablePostFields = [
+  'title',
+  'smartTitle',
+  'titleHtml',
+  'summary',
+] as const;
+export type TranslateablePostField = (typeof translateablePostFields)[number];
+export type PostTranslation = {
+  [key in TranslateablePostField]?: boolean;
+};
+
+export type DigestPostAd = {
+  type: 'dynamic_ad';
+  index: number;
+  title: string;
+  link: string;
+  image: string;
+  companyName: string;
+  companyLogo: string;
+  callToAction: string;
+};
+
+type PostFlags = {
+  sentAnalyticsReport: boolean;
+  banned: boolean;
+  deleted: boolean;
+  private: boolean;
+  visible: boolean;
+  showOnFeed: boolean;
+  promoteToPublic: number;
+  coverVideo?: string;
+  campaignId: string | null;
+  posts?: number;
+  sources?: number;
+  savedTime?: number;
+  generatedAt?: Date;
+  digestPostIds?: string[];
+  ad?: DigestPostAd | null;
+};
+
+export type ContentEmbedPost = {
+  __typename?: string;
+  title?: string;
+  image?: string;
+  source?: Pick<Source, 'handle' | 'name' | 'image'>;
+  author?: Pick<Author, 'id'>;
+  createdAt?: string;
+  readTime?: number;
+  numUpvotes?: number;
+  numComments?: number;
+  numAwards?: number;
+  numReposts?: number;
+  numCollectionSources?: number;
+  numPollVotes?: number;
+  endsAt?: string;
+  analytics?: Partial<Pick<PostAnalytics, 'impressions'>>;
+  featuredAward?: {
+    award?: Pick<FeaturedAward, 'name' | 'image'>;
+  };
+  type: PostType;
+  sharedPost?: { type: PostType };
+  commentsPermalink?: string;
+};
+
+export type ContentEmbed = {
+  __typename?: string;
+  id: string;
+  url: string;
+  sortOrder: number;
+  startOffset?: number;
+  endOffset?: number;
+  referenceType: string;
+  referenceId?: string;
+  post?: ContentEmbedPost | null;
+};
+
+export enum UserVote {
+  Up = 1,
+  None = 0,
+  Down = -1,
+}
+
+export type UserPostFlags = {
+  feedbackDismiss: boolean;
+};
+
+export interface PostUserState {
+  vote: UserVote;
+  flags?: UserPostFlags;
+  awarded?: boolean;
+  pollOption?: { id: string };
+}
+
+export interface Post {
+  __typename?: string;
+  id: string;
+  title?: string;
+  titleHtml?: string;
+  permalink?: string;
+  image: string;
+  content?: string;
+  contentHtml?: string;
+  contentEmbeds?: ContentEmbed[];
+  createdAt?: string;
+  pinnedAt?: Date | string;
+  readTime?: number;
+  tags?: string[];
+  source?: Source | Squad;
+  collectionSources?: Source[];
+  numCollectionSources?: number;
+  upvoted?: boolean;
+  commented?: boolean;
+  commentsPermalink: string;
+  numUpvotes?: number;
+  numComments?: number;
+  numAwards?: number;
+  numReposts?: number;
+  author?: Author;
+  scout?: Scout;
+  read?: boolean;
+  bookmarked?: boolean;
+  trending?: number;
+  description?: string;
+  summary?: string;
+  toc?: Toc;
+  impressionStatus?: number;
+  isAuthor?: number;
+  isScout?: number;
+  sharedPost?: SharedPost;
+  type: PostType;
+  subType?: string;
+  private?: boolean;
+  feedMeta?: string;
+  downvoted?: boolean;
+  flags?: PostFlags;
+  userState?: PostUserState;
+  videoId?: string;
+  updatedAt?: string;
+  slug?: string;
+  bookmark?: Bookmark;
+  bookmarkList?: BookmarkFolder;
+  domain?: string;
+  clickbaitTitleDetected?: boolean;
+  translation?: PostTranslation;
+  language?: string;
+  yggdrasilId?: string;
+  creatorTwitter?: string;
+  creatorTwitterName?: string;
+  creatorTwitterImage?: string;
+  featuredAward?: {
+    award?: FeaturedAward;
+  };
+  pollOptions?: PollOption[];
+  numPollVotes?: number;
+  endsAt?: string;
+  liveRoom?: LiveRoomPost | null;
+  analytics?: Partial<Pick<PostAnalytics, 'impressions' | 'bookmarks'>>;
+}
+
+export type RelatedPost = Pick<
+  Post,
+  'id' | 'commentsPermalink' | 'title' | 'summary' | 'createdAt'
+> & {
+  source: Pick<Source, 'id' | 'handle' | 'name' | 'image'>;
+};
+
+export interface Ad {
+  pixel?: string[];
+  source: string;
+  company: string;
+  link: string;
+  description: string;
+  image: string;
+  placeholder?: string;
+  referralLink?: string;
+  providerId?: string;
+  renderTracked?: boolean;
+  impressionStatus?: number;
+  tagLine?: string;
+  backgroundColor?: string;
+  data?: { post?: Post; source?: Squad };
+  generationId?: string;
+  matchingTags?: string[];
+  adDomain?: string;
+  companyLogo?: string;
+  callToAction?: string;
+}
+
+export type ReadHistoryPost = Pick<
+  Post,
+  | 'id'
+  | 'slug'
+  | 'title'
+  | 'commentsPermalink'
+  | 'image'
+  | 'readTime'
+  | 'numUpvotes'
+  | 'createdAt'
+  | 'bookmarked'
+  | 'permalink'
+  | 'numComments'
+  | 'trending'
+  | 'tags'
+  | 'sharedPost'
+  | 'type'
+  | 'userState'
+  | 'author'
+  | 'scout'
+> & { source?: Source };
+
+export interface PostItem {
+  timestamp?: Date;
+  timestampDb?: Date;
+  post: ReadHistoryPost;
+}
+
+export interface PostData {
+  post: Post;
+  relatedCollectionPosts?: Connection<RelatedPost>;
+}
+
+export interface PostRepostsData {
+  postReposts: Connection<Post>;
+}
+
+export const RELATED_POSTS_PER_PAGE_DEFAULT = 5;
+
+export const POST_BY_ID_QUERY = gql`
+  query Post($id: ID!) {
+    post(id: $id) {
+      ...SharedPostInfo
+      trending
+      content
+      contentHtml
+      contentEmbeds {
+        ...ContentEmbedFragment
+      }
+      pinnedAt
+      bookmarkList {
+        id
+      }
+      sharedPost {
+        ...SharedPostInfo
+      }
+      source {
+        ...SourceBaseInfo
+      }
+      description
+      summary
+      toc {
+        text
+        id
+      }
+      updatedAt
+      numCollectionSources
+      collectionSources {
+        handle
+        image
+      }
+    }
+    relatedCollectionPosts: relatedPosts(
+      id: $id
+      relationType: COLLECTION
+      first: ${RELATED_POSTS_PER_PAGE_DEFAULT}
+    ) {
+      edges {
+        node {
+          ...RelatedPost
+        }
+      }
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
+    }
+  }
+  ${SHARED_POST_INFO_FRAGMENT}
+  ${RELATED_POST_FRAGMENT}
+  ${CONTENT_EMBED_FRAGMENT}
+`;
+
+export const getPostById = (id: string) =>
+  gqlClient.request<PostData>(POST_BY_ID_QUERY, { id });
+
+export const POST_UPVOTES_BY_ID_QUERY = gql`
+  ${USER_AUTHOR_FRAGMENT}
+  query PostUpvotes($id: String!, $after: String, $first: Int) {
+    upvotes: postUpvotes(id: $id, after: $after, first: $first) {
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
+      edges {
+        node {
+          user {
+            ...UserAuthor
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const POST_REPOSTS_BY_ID_QUERY = gql`
+  query PostReposts(
+    $id: String!
+    $after: String
+    $first: Int
+    $supportedTypes: [String!]
+  ) {
+    postReposts(
+      id: $id
+      after: $after
+      first: $first
+      supportedTypes: $supportedTypes
+    ) {
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
+      edges {
+        node {
+          ...SharedPostInfo
+        }
+      }
+    }
+  }
+  ${SHARED_POST_INFO_FRAGMENT}
+`;
+
+export const POST_BY_ID_STATIC_FIELDS_QUERY = gql`
+  query Post($id: ID!) {
+    post(id: $id) {
+      ...SharedPostInfo
+      contentHtml
+      description
+      toc {
+        text
+        id
+      }
+      updatedAt
+      numCollectionSources
+      collectionSources {
+        handle
+        image
+      }
+      sharedPost {
+        ...SharedPostInfo
+      }
+    }
+  }
+  ${SHARED_POST_INFO_FRAGMENT}
+`;
+
+export const DISMISS_POST_FEEDBACK_MUTATION = gql`
+  mutation DismissPostFeedback($id: ID!) {
+    dismissPostFeedback(id: $id) {
+      _
+    }
+  }
+`;
+
+export const DELETE_POST_MUTATION = gql`
+  mutation DeletePost($id: ID!) {
+    deletePost(id: $id) {
+      _
+    }
+  }
+`;
+
+export const BAN_POST_MUTATION = gql`
+  mutation BanPost($id: ID!) {
+    banPost(id: $id) {
+      _
+    }
+  }
+`;
+
+export const PROMOTE_TO_PUBLIC_MUTATION = gql`
+  mutation PromoteToPublic($id: ID!) {
+    promoteToPublic(id: $id) {
+      _
+    }
+  }
+`;
+
+export const DEMOTE_FROM_PUBLIC_MUTATION = gql`
+  mutation DemoteFromPublic($id: ID!) {
+    demoteFromPublic(id: $id) {
+      _
+    }
+  }
+`;
+
+export const CLICKBAIT_POST_MUTATION = gql`
+  mutation ClickbaitPost($id: ID!) {
+    clickbaitPost(id: $id) {
+      _
+    }
+  }
+`;
+
+export const ADD_BOOKMARKS_MUTATION = gql`
+  mutation AddBookmarks($data: AddBookmarkInput!) {
+    addBookmarks(data: $data) {
+      list {
+        id
+        name
+      }
+      postId
+    }
+  }
+`;
+
+export const REMOVE_BOOKMARK_MUTATION = gql`
+  mutation RemoveBookmark($id: ID!) {
+    removeBookmark(id: $id) {
+      _
+    }
+  }
+`;
+
+export interface FeedData {
+  page: Connection<Post>;
+}
+
+export interface PostsEngaged {
+  postsEngaged: { id: string; numComments: number; numUpvotes: number };
+}
+
+export const POSTS_ENGAGED_SUBSCRIPTION = gql`
+  subscription PostsEngaged {
+    postsEngaged {
+      id
+      numComments
+      numUpvotes
+    }
+  }
+`;
+
+export const REPORT_POST_MUTATION = gql`
+  mutation ReportPost(
+    $id: ID!
+    $reason: ReportReason!
+    $comment: String
+    $tags: [String!]
+  ) {
+    reportPost(id: $id, reason: $reason, comment: $comment, tags: $tags) {
+      _
+    }
+  }
+`;
+
+export const HIDE_POST_MUTATION = gql`
+  mutation HidePost($id: ID!) {
+    hidePost(id: $id) {
+      _
+    }
+  }
+`;
+
+export const UNHIDE_POST_MUTATION = gql`
+  mutation UnhidePost($id: ID!) {
+    unhidePost(id: $id) {
+      _
+    }
+  }
+`;
+
+export const dismissPostFeedback = (id: string): Promise<EmptyResponse> => {
+  return gqlClient.request(DISMISS_POST_FEEDBACK_MUTATION, {
+    id,
+  });
+};
+
+export const banPost = (id: string): Promise<EmptyResponse> => {
+  return gqlClient.request(BAN_POST_MUTATION, {
+    id,
+  });
+};
+
+export const promotePost = (id: string): Promise<EmptyResponse> =>
+  gqlClient.request(PROMOTE_TO_PUBLIC_MUTATION, {
+    id,
+  });
+
+export const demotePost = (id: string): Promise<EmptyResponse> =>
+  gqlClient.request(DEMOTE_FROM_PUBLIC_MUTATION, {
+    id,
+  });
+
+export const deletePost = (id: string): Promise<EmptyResponse> => {
+  return gqlClient.request(DELETE_POST_MUTATION, {
+    id,
+  });
+};
+
+export const clickbaitPost = (id: string): Promise<EmptyResponse> =>
+  gqlClient.request(CLICKBAIT_POST_MUTATION, {
+    id,
+  });
+
+export const VIEW_POST_MUTATION = gql`
+  mutation ViewPost($id: ID!) {
+    viewPost(id: $id) {
+      _
+    }
+  }
+`;
+
+export const sendViewPost = (id: string): Promise<void> =>
+  gqlClient.request(VIEW_POST_MUTATION, { id });
+
+export const LATEST_CHANGELOG_POST_QUERY = gql`
+  query LatestChangelogPost {
+    page: sourceFeed(source: "daily_updates", first: 1, ranking: TIME) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          id
+          title
+          createdAt
+          image
+          commentsPermalink
+          numComments
+          numUpvotes
+          summary
+          userState {
+            vote
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const getLatestChangelogPost = async (): Promise<Post> => {
+  const feedData = await gqlClient.request<FeedData>(
+    LATEST_CHANGELOG_POST_QUERY,
+  );
+
+  return feedData?.page?.edges?.[0]?.node;
+};
+
+export const SUBMIT_EXTERNAL_LINK_MUTATION = gql`
+  mutation SubmitExternalLink(
+    $sourceId: ID!
+    $url: String!
+    $title: String
+    $image: String
+    $commentary: String
+  ) {
+    submitExternalLink(
+      url: $url
+      title: $title
+      image: $image
+      sourceId: $sourceId
+      commentary: $commentary
+    ) {
+      _
+    }
+  }
+`;
+
+export interface ExternalLinkPreview {
+  url?: string;
+  permalink?: string;
+  id?: string;
+  title?: string;
+  image?: string;
+  source?: Source;
+  finalUrl?: string;
+  relatedPublicPosts?: Array<Post> | null;
+}
+
+export const PREVIEW_LINK_MUTATION = gql`
+  mutation CheckLinkPreview($url: String!) {
+    checkLinkPreview(url: $url) {
+      id
+      title
+      image
+      url
+      relatedPublicPosts {
+        id
+        title
+        permalink
+        createdAt
+        source {
+          id
+          name
+          image
+          type
+        }
+        author {
+          id
+          image
+          username
+        }
+      }
+    }
+  }
+`;
+
+export const getExternalLinkPreview = async (
+  url: string,
+  requestMethod = gqlRequest,
+): Promise<ExternalLinkPreview> => {
+  const res = await requestMethod(PREVIEW_LINK_MUTATION, { url });
+
+  return res.checkLinkPreview;
+};
+
+export interface SubmitExternalLink
+  extends Pick<ExternalLinkPreview, 'title' | 'image' | 'url'> {
+  sourceId: string;
+  commentary: string;
+}
+
+export const submitExternalLink = (
+  params: SubmitExternalLink,
+  requestMethod = gqlRequest,
+): Promise<EmptyResponse> =>
+  requestMethod(SUBMIT_EXTERNAL_LINK_MUTATION, params);
+
+export const EDIT_POST_MUTATION = gql`
+  mutation EditPost(
+    $id: ID!
+    $title: String
+    $content: String
+    $image: Upload
+  ) {
+    editPost(id: $id, title: $title, content: $content, image: $image) {
+      ...SharedPostInfo
+      trending
+      content
+      contentHtml
+      source {
+        ...SourceBaseInfo
+      }
+      description
+      summary
+      toc {
+        text
+        id
+      }
+    }
+  }
+  ${SHARED_POST_INFO_FRAGMENT}
+`;
+
+export type EditPostProps = {
+  id: string;
+  title: string;
+  content: string;
+  image?: File;
+};
+
+export type CreatePostProps = Pick<
+  EditPostProps,
+  'title' | 'content' | 'image'
+>;
+
+export interface CreatePostPollProps
+  extends Pick<EditPostProps, 'title' | 'content' | 'image'> {
+  duration: number;
+  options: string[];
+}
+export interface PollOption {
+  id: string;
+  text: string;
+  order: number;
+  numVotes: number;
+}
+
+type CreatePollOption = Pick<PollOption, 'text' | 'order'>;
+
+export interface CreatePollPostForm extends Pick<EditPostProps, 'title'> {
+  options: string[];
+  duration?: number;
+}
+
+export interface CreatePostModerationProps {
+  title?: string;
+  content?: string;
+  sourceId: string;
+  type: PostType;
+  sharedPostId?: string;
+  externalLink?: string;
+  imageUrl?: string;
+  image?: File;
+  postId?: string;
+  duration?: number;
+  pollOptions?: CreatePollOption[];
+}
+
+export interface UpdatePostModerationProps extends CreatePostModerationProps {
+  id: string;
+}
+
+export const editPost = async (
+  variables: Partial<EditPostProps>,
+): Promise<Post> => {
+  const res = await gqlClient.request(EDIT_POST_MUTATION, variables);
+
+  return res.editPost;
+};
+
+export const PIN_POST_MUTATION = gql`
+  mutation UpdatePinPost($id: ID!, $pinned: Boolean!) {
+    updatePinPost(id: $id, pinned: $pinned) {
+      _
+    }
+  }
+`;
+
+interface UpdatePinnedProps {
+  id: string;
+  pinned: boolean;
+}
+
+export const updatePinnedPost = async (
+  variables: UpdatePinnedProps,
+): Promise<void> => gqlClient.request(PIN_POST_MUTATION, variables);
+
+export const SWAP_PINNED_POSTS_MUTATION = gql`
+  mutation SwapPinnedPosts($id: ID!, $swapWithId: ID!) {
+    swapPinnedPosts(id: $id, swapWithId: $swapWithId) {
+      _
+    }
+  }
+`;
+
+interface SwapPinnedPostsProps {
+  id: Post['id'];
+  swapWithId: Post['id'];
+}
+
+export const swapPinnedPosts = async (
+  variables: SwapPinnedPostsProps,
+): Promise<void> => gqlClient.request(SWAP_PINNED_POSTS_MUTATION, variables);
+
+export const CREATE_SOURCE_POST_MODERATION_MUTATION = gql`
+  mutation CreateSourcePostModeration(
+    $sourceId: ID!
+    $type: String!
+    $title: String
+    $content: String
+    $sharedPostId: ID
+    $image: Upload
+    $imageUrl: String
+    $externalLink: String
+    $postId: ID
+    $duration: Int
+    $pollOptions: [PollOptionInput!]
+  ) {
+    createSourcePostModeration(
+      sourceId: $sourceId
+      type: $type
+      title: $title
+      content: $content
+      sharedPostId: $sharedPostId
+      image: $image
+      imageUrl: $imageUrl
+      externalLink: $externalLink
+      postId: $postId
+      duration: $duration
+      pollOptions: $pollOptions
+    ) {
+      id
+      title
+      image
+      content
+      type
+      externalLink
+      source {
+        handle
+        permalink
+      }
+      post {
+        id
+      }
+    }
+  }
+`;
+
+export const CREATE_POST_MUTATION = gql`
+  mutation CreatePost(
+    $sourceId: ID!
+    $title: String!
+    $content: String
+    $image: Upload
+  ) {
+    createFreeformPost(
+      sourceId: $sourceId
+      title: $title
+      content: $content
+      image: $image
+    ) {
+      ...SharedPostInfo
+      content
+      contentHtml
+      source {
+        ...SourceBaseInfo
+      }
+      description
+      summary
+    }
+  }
+  ${SHARED_POST_INFO_FRAGMENT}
+`;
+
+export const createPost = async (
+  variables: Partial<CreatePostProps>,
+): Promise<Post> => {
+  const res = await gqlClient.request(CREATE_POST_MUTATION, variables);
+
+  return res.createFreeformPost;
+};
+
+export const CREATE_POST_IN_MULTIPLE_SOURCES = gql`
+  mutation CreatePostInMultipleSources(
+    $sourceIds: [ID!]!
+    $title: String
+    $commentary: String
+    $imageUrl: String
+    $content: String
+    $image: Upload
+    $sharedPostId: ID
+    $externalLink: String
+    $options: [PollOptionInput!]
+    $duration: Int
+  ) {
+    createPostInMultipleSources(
+      sourceIds: $sourceIds
+      title: $title
+      commentary: $commentary
+      imageUrl: $imageUrl
+      content: $content
+      image: $image
+      sharedPostId: $sharedPostId
+      externalLink: $externalLink
+      options: $options
+      duration: $duration
+    ) {
+      id
+      sourceId
+      type
+      slug
+    }
+  }
+`;
+
+export interface CreatePostInMultipleSourcesArgs
+  extends Partial<CreatePostProps>,
+    Pick<CreatePollPostProps, 'options' | 'duration'> {
+  commentary?: string;
+  externalLink?: string;
+  imageUrl?: string;
+  sharedPostId?: string;
+  sourceIds: string[];
+}
+
+export type CreatePostInMultipleSourcesResponse = Array<{
+  id: string;
+  sourceId: string;
+  type: 'post' | 'moderationItem';
+  slug?: string;
+}>;
+
+export const createPostInMultipleSources = async (
+  variables: CreatePostInMultipleSourcesArgs,
+) => {
+  const { image, ...rest } = variables;
+  const sanitized = {
+    ...rest,
+    ...(image instanceof File && image.size > 0 ? { image } : {}),
+  };
+  const res = await gqlClient.request<
+    {
+      createPostInMultipleSources: CreatePostInMultipleSourcesResponse;
+    },
+    CreatePostInMultipleSourcesArgs
+  >(CREATE_POST_IN_MULTIPLE_SOURCES, sanitized);
+  return res.createPostInMultipleSources;
+};
+
+export interface VotePollResponse {
+  numPollVotes: number;
+  pollOptions: PollOption[];
+}
+
+export const VOTE_POLL_MUTATION = gql`
+  mutation VotePoll($postId: ID!, $optionId: ID!) {
+    votePoll(postId: $postId, optionId: $optionId) {
+      numPollVotes
+      pollOptions {
+        id
+        text
+        order
+        numVotes
+      }
+    }
+  }
+`;
+
+export const votePoll = async (variables: {
+  postId: string;
+  optionId: string;
+}): Promise<VotePollResponse> => {
+  const res = await gqlClient.request(VOTE_POLL_MUTATION, variables);
+
+  return res.votePoll;
+};
+
+export const CREATE_POLL_POST_MUTATION = gql`
+  mutation CreatePollPost(
+    $sourceId: ID!
+    $title: String!
+    $options: [PollOptionInput!]!
+    $duration: Int
+  ) {
+    createPollPost(
+      sourceId: $sourceId
+      title: $title
+      options: $options
+      duration: $duration
+    ) {
+      ...SharedPostInfo
+    }
+  }
+  ${SHARED_POST_INFO_FRAGMENT}
+`;
+
+interface CreatePollPostProps extends Omit<CreatePollPostForm, 'options'> {
+  options: CreatePollOption[];
+}
+
+export const createPollPost = async (
+  variables: CreatePollPostProps,
+): Promise<Post> => {
+  const res = await gqlClient.request(CREATE_POLL_POST_MUTATION, variables);
+
+  return res.createPollPost;
+};
+
+export const SOURCE_POST_MODERATION_QUERY = gql`
+  query SourcePostModeration($id: ID!) {
+    sourcePostModeration(id: $id) {
+      id
+      type
+      title
+      content
+      externalLink
+      image
+      createdBy {
+        id
+      }
+      source {
+        id
+      }
+      sharedPost {
+        id
+        title
+        image
+        permalink
+      }
+    }
+  }
+`;
+
+interface GetSourcePostModerationProps {
+  id: string;
+}
+
+export const getSourcePostModeration = async ({
+  id,
+}: GetSourcePostModerationProps): Promise<SourcePostModeration> => {
+  const res = await gqlClient.request(SOURCE_POST_MODERATION_QUERY, { id });
+
+  return res.sourcePostModeration;
+};
+
+export const UPLOAD_IMAGE_MUTATION = gql`
+  mutation UploadContentImage($image: Upload!) {
+    uploadContentImage(image: $image)
+  }
+`;
+
+export const imageSizeLimitMB = 20;
+export const allowedFileSize = imageSizeLimitMB * MEGABYTE;
+export const allowedContentImage = [...acceptedTypesList, 'image/gif'];
+
+export const uploadNotAcceptedMessage = `File type is not allowed or the size exceeded the limit of ${imageSizeLimitMB} MB`;
+
+export const uploadContentImage = async (
+  image: File,
+  onProcessing?: (file: File) => void,
+): Promise<string> => {
+  if (image.size > allowedFileSize) {
+    throw new Error(`File size exceeds the limit of ${imageSizeLimitMB} MB`);
+  }
+
+  if (!allowedContentImage.includes(image.type)) {
+    throw new Error('File type is not allowed');
+  }
+
+  if (onProcessing) {
+    onProcessing(image);
+  }
+
+  const res = await gqlClient.request(UPLOAD_IMAGE_MUTATION, { image });
+
+  return res.uploadContentImage;
+};
+
+export enum PostRelationType {
+  Collection = 'COLLECTION',
+}
+
+export const RELATED_POSTS_QUERY = gql`
+  query relatedPosts(
+    $id: ID!
+    $relationType: PostRelationType!
+    $after: String
+    $first: Int
+  ) {
+    relatedPosts(
+      id: $id
+      relationType: $relationType
+      after: $after
+      first: $first
+    ) {
+      edges {
+        node {
+          ...RelatedPost
+        }
+      }
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
+    }
+  }
+  ${RELATED_POST_FRAGMENT}
+`;
+
+export const POST_CODE_SNIPPETS_PER_PAGE_DEFAULT = 5;
+
+export type PostCodeSnippet = {
+  content: string;
+};
+
+export const POST_CODE_SNIPPETS_QUERY = gql`
+  query postCodeSnippets($id: ID!, $after: String, $first: Int) {
+    postCodeSnippets(id: $id, after: $after, first: $first) {
+      edges {
+        node {
+          ...PostCodeSnippet
+        }
+      }
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
+    }
+  }
+  ${POST_CODE_SNIPPET_FRAGMENT}
+`;
+
+export type PostSmartTitle = Pick<Post, 'title' | 'translation'>;
+
+export const POST_FETCH_SMART_TITLE_QUERY = gql`
+  query FetchSmartTitle($id: ID!) {
+    fetchSmartTitle(id: $id) {
+      title
+      translation {
+        title
+        smartTitle
+      }
+    }
+  }
+`;
+
+export const createSourcePostModeration = async (
+  variables: Partial<CreatePostModerationProps>,
+): Promise<SourcePostModeration> => {
+  const res = await gqlClient.request(
+    CREATE_SOURCE_POST_MODERATION_MUTATION,
+    variables,
+  );
+
+  return res.createSourcePostModeration;
+};
+
+export const UPDATE_SOURCE_POST_MODERATION_MUTATION = gql`
+  mutation EditSourcePostModeration(
+    $id: ID!
+    $sourceId: ID!
+    $type: String!
+    $title: String
+    $content: String
+    $sharedPostId: ID
+    $image: Upload
+    $imageUrl: String
+    $externalLink: String
+  ) {
+    editSourcePostModeration(
+      id: $id
+      sourceId: $sourceId
+      type: $type
+      title: $title
+      content: $content
+      sharedPostId: $sharedPostId
+      image: $image
+      imageUrl: $imageUrl
+      externalLink: $externalLink
+    ) {
+      id
+      title
+      image
+      content
+      type
+      externalLink
+    }
+  }
+`;
+
+export const updateSourcePostModeration = async (
+  variables: Partial<UpdatePostModerationProps>,
+): Promise<SourcePostModeration> => {
+  const res = await gqlClient.request(
+    UPDATE_SOURCE_POST_MODERATION_MUTATION,
+    variables,
+  );
+
+  return res.updateSourcePostModeration;
+};
+
+export const checkCanBoostByUser = (post: Post, userId: string) =>
+  (post?.author?.id && post?.author?.id === userId) ||
+  (post?.scout?.id && post?.scout?.id === userId);
+
+export const useCanBoostPost = (post: Post) => {
+  const { user } = useAuthContext();
+  const canBuy = useCanPurchaseCores();
+
+  if (!user?.id) {
+    return { canBoost: false };
+  }
+
+  const canBoost =
+    canBuy && checkCanBoostByUser(post, user.id) && !post?.private;
+
+  return { canBoost };
+};
+
+export const BRIEFING_POSTS_PER_PAGE_DEFAULT = 20;
+
+export const BRIEFING_POSTS_QUERY = gql`
+  query BriefingPosts(
+    $after: String
+    $first: Int
+    $loggedIn: Boolean! = false
+  ) {
+    page: briefingPosts(after: $after, first: $first) {
+      ...FeedPostConnection
+    }
+  }
+  ${FEED_POST_CONNECTION_FRAGMENT}
+`;
+
+export enum BriefingType {
+  Daily = 'daily',
+  Weekly = 'weekly',
+}
+
+export const GENERATE_BRIEFING = gql`
+  mutation GenerateBriefing($type: BriefingType!) {
+    generateBriefing(type: $type) {
+      id: postId
+      balance {
+        amount
+      }
+    }
+  }
+`;
+
+export const getGenerateBriefingMutationOptions = () => {
+  return {
+    mutationFn: async ({
+      type = BriefingType.Daily,
+    }: {
+      type: BriefingType;
+    }) => {
+      const result = await gqlClient.request<{
+        generateBriefing: Pick<Post, 'id'> & Pick<LoggedUser, 'balance'>;
+      }>(GENERATE_BRIEFING, { type });
+      return result.generateBriefing;
+    },
+  };
+};
+
+export const defautRefetchMs = 4000;
+export const briefRefetchIntervalMs = defautRefetchMs;
+
+export const POST_ANALYTICS_QUERY = gql`
+  query PostAnalytics($id: ID!) {
+    postAnalytics(id: $id) {
+      id
+      impressions
+      reach
+      bookmarks
+      profileViews
+      followers
+      squadJoins
+      reputation
+      coresEarned
+      upvotes
+      comments
+      awards
+      upvotesRatio
+      shares
+      reachAds
+      impressionsAds
+      clicks
+    }
+  }
+`;
+
+export type PostAnalytics = {
+  id: string;
+  impressions: number;
+  reach: number;
+  bookmarks: number;
+  profileViews: number;
+  followers: number;
+  squadJoins: number;
+  reputation: number;
+  coresEarned: number;
+  upvotes: number;
+  comments: number;
+  awards: number;
+  upvotesRatio: number;
+  shares: number;
+  reachAds: number;
+  impressionsAds: number;
+  clicks: number;
+};
+
+export const postAnalyticsQueryOptions = ({ id }: { id?: string }) => {
+  const postId = id ?? '';
+
+  return {
+    queryKey: [...getPostByIdKey(postId), RequestKey.PostAnalytics],
+    queryFn: async () => {
+      const result = await gqlClient.request<{
+        postAnalytics: PostAnalytics;
+      }>(POST_ANALYTICS_QUERY, { id: postId });
+
+      return result.postAnalytics;
+    },
+    enabled: !!id,
+    staleTime: StaleTime.Default,
+  };
+};
+
+export const postAnalyticsHistoryLimit = 45;
+
+export const POST_ANALYTICS_HISTORY_QUERY = gql`
+  query PostAnalyticsHistory($after: String, $first: Int, $id: ID!) {
+    postAnalyticsHistory(after: $after, first: $first, id: $id) {
+      edges {
+        cursor
+        node {
+          id
+          date
+          impressions
+          impressionsAds
+        }
+      }
+    }
+  }
+`;
+
+export type PostAnalyticsHistory = Pick<
+  PostAnalytics,
+  'id' | 'impressions' | 'impressionsAds'
+> & {
+  date: Date;
+};
+
+export const postAnalyticsHistoryQuery = ({
+  id,
+  first = postAnalyticsHistoryLimit,
+}: {
+  id?: string;
+  first?: number;
+}) => {
+  const postId = id ?? '';
+
+  return {
+    queryKey: [...getPostByIdKey(postId), RequestKey.PostAnalyticsHistory],
+    queryFn: async () => {
+      const result = await gqlClient.request<{
+        postAnalyticsHistory: Connection<PostAnalyticsHistory>;
+      }>(POST_ANALYTICS_HISTORY_QUERY, { first, id: postId });
+
+      return result.postAnalyticsHistory;
+    },
+    enabled: !!id,
+    staleTime: StaleTime.Default,
+  };
+};

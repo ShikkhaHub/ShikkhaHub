@@ -1,0 +1,228 @@
+import type { ReactElement } from 'react';
+import React from 'react';
+import type { NextSeoProps } from 'next-seo';
+import { FormProvider } from 'react-hook-form';
+import UserWorkExperienceForm from '@shikkhahub/shared/src/features/profile/components/experience/forms/UserWorkExperienceForm';
+import UserEducationForm from '@shikkhahub/shared/src/features/profile/components/experience/forms/UserEducationForm';
+import UserCertificationForm from '@shikkhahub/shared/src/features/profile/components/experience/forms/UserCertificationForm';
+import UserProjectExperienceForm from '@shikkhahub/shared/src/features/profile/components/experience/forms/UserProjectExperienceForm';
+import DeleteExperienceButton from '@shikkhahub/shared/src/features/profile/components/experience/DeleteExperienceButton';
+import UserVolunteeringExperienceForm from '@shikkhahub/shared/src/features/profile/components/experience/forms/UserVolunteeringExperienceForm';
+import {
+  Button,
+  ButtonSize,
+  ButtonVariant,
+} from '@shikkhahub/shared/src/components/buttons/Button';
+import type { UserExperience } from '@shikkhahub/shared/src/graphql/user/profile';
+import useUserExperienceForm from '@shikkhahub/shared/src/hooks/useUserExperienceForm';
+import {
+  getUserExperienceById,
+  UserExperienceType,
+} from '@shikkhahub/shared/src/graphql/user/profile';
+import type { GetServerSideProps } from 'next';
+import type { TLocation } from '@shikkhahub/shared/src/graphql/autocomplete';
+import type { Company } from '@shikkhahub/shared/src/lib/userCompany';
+import { useRouter } from 'next/router';
+import { getCookiesAndHeadersFromRequest } from '@shikkhahub/shared/src/features/onboarding/lib/utils';
+import { getSettingsLayout } from '../../../../components/layouts/SettingsLayout';
+import { AccountPageContainer } from '../../../../components/layouts/SettingsLayout/AccountPageContainer';
+import { defaultSeo } from '../../../../next-seo';
+import { getPageSeoTitles } from '../../../../components/layouts/utils';
+
+const seo: NextSeoProps = {
+  ...defaultSeo,
+  ...getPageSeoTitles('Edit experience'),
+};
+
+const titleCopy = {
+  [UserExperienceType.Work]: 'Work Experience',
+  [UserExperienceType.Education]: 'Education',
+  [UserExperienceType.Certification]: 'Certification',
+  [UserExperienceType.Volunteering]: 'Volunteering',
+  [UserExperienceType.Project]: 'Project',
+  [UserExperienceType.OpenSource]: 'Open Source',
+};
+
+type DefaultValues = UserExperience & {
+  startedAtMonth: string;
+  startedAtYear: string;
+  endedAtMonth: string;
+  endedAtYear: string;
+  skills?: string[];
+  location?: TLocation;
+  storedCustomCompanyName?: string | null;
+  company?: Company | null;
+};
+
+type PageProps = {
+  experience: DefaultValues | null;
+};
+
+const splitMonthYear = (value?: string) => {
+  if (!value) {
+    return ['', ''];
+  }
+  const date = new Date(value);
+  const month = date.getMonth().toString();
+  const year = date.getFullYear().toString();
+  return [month, year];
+};
+
+const defaultValues: DefaultValues = {
+  type: UserExperienceType.Work,
+  id: '',
+  title: '',
+  description: '',
+  createdAt: '',
+  startedAtMonth: '',
+  startedAtYear: '',
+  endedAtMonth: '',
+  endedAtYear: '',
+  skills: [],
+};
+
+const getExperienceType = (
+  typeParam: string | string[] | undefined,
+): UserExperienceType => {
+  if (typeof typeParam === 'string') {
+    const validType = Object.values(UserExperienceType).find(
+      (t) => t === typeParam,
+    );
+    if (validType) {
+      return validType;
+    }
+  }
+  return UserExperienceType.Work;
+};
+
+export const getServerSideProps: GetServerSideProps<PageProps> = async ({
+  query,
+  req,
+}) => {
+  const { id, type } = query;
+  const typeParam = getExperienceType(type);
+
+  if (!id) {
+    return {
+      props: {
+        experience: {
+          ...defaultValues,
+          type: typeParam,
+        },
+      },
+    };
+  }
+
+  const { cookies } = getCookiesAndHeadersFromRequest(req);
+  const result = await getUserExperienceById(id as string, { Cookie: cookies });
+
+  if (!result || !result.isOwner) {
+    return {
+      redirect: {
+        destination: `/settings/profile/experience/${typeParam}`,
+        permanent: false,
+      },
+    };
+  }
+
+  delete result.isOwner;
+  const [startedAtMonth, startedAtYear] = splitMonthYear(result.startedAt);
+  const [endedAtMonth, endedAtYear] = splitMonthYear(result.endedAt);
+
+  return {
+    props: {
+      experience: {
+        ...result,
+        companyId: result.company?.id || '',
+        customCompanyName: result.company?.name || result.customCompanyName,
+        storedCustomCompanyName: result.customCompanyName,
+        company: result.company,
+        startedAtMonth,
+        startedAtYear,
+        endedAtMonth,
+        endedAtYear,
+        current: !result.endedAt,
+        skills: result.skills?.map((skill) => skill.value),
+        location: result.location,
+        externalLocationId: result.location?.externalId || '',
+        repositorySearch: result.repository?.name || '',
+      },
+    },
+  };
+};
+
+const renderExperienceForm = (
+  type?: UserExperienceType,
+  experience?: DefaultValues,
+) => {
+  const companyProps = {
+    company: experience?.company,
+  };
+
+  switch (type) {
+    case UserExperienceType.Education:
+      return <UserEducationForm {...companyProps} />;
+    case UserExperienceType.Certification:
+      return <UserCertificationForm {...companyProps} />;
+    case UserExperienceType.Volunteering:
+      return <UserVolunteeringExperienceForm {...companyProps} />;
+    case UserExperienceType.Project:
+    case UserExperienceType.OpenSource:
+      return <UserProjectExperienceForm {...companyProps} />;
+    default:
+      return (
+        <UserWorkExperienceForm
+          location={experience?.location}
+          {...companyProps}
+        />
+      );
+  }
+};
+
+const Page = ({ experience }: PageProps): ReactElement => {
+  const router = useRouter();
+  const { methods, save, isPending } = useUserExperienceForm({
+    defaultValues: experience,
+  });
+
+  return (
+    <FormProvider {...methods}>
+      <form
+        className="flex flex-1 flex-col"
+        onSubmit={methods.handleSubmit(() => save())}
+      >
+        <AccountPageContainer
+          onBack={() => router.back()}
+          title={`${experience?.id ? 'Edit' : 'Add'} ${
+            titleCopy[experience.type]
+          }`}
+          actions={
+            <Button
+              type="submit"
+              className="ml-auto"
+              variant={ButtonVariant.Primary}
+              size={ButtonSize.Small}
+              disabled={isPending}
+              loading={isPending}
+            >
+              Save
+            </Button>
+          }
+        >
+          {renderExperienceForm(experience?.type, experience)}
+          {experience?.id && (
+            <DeleteExperienceButton
+              experienceId={experience.id}
+              experienceType={experience.type}
+            />
+          )}
+        </AccountPageContainer>
+      </form>
+    </FormProvider>
+  );
+};
+
+Page.getLayout = getSettingsLayout;
+Page.layoutProps = { seo };
+
+export default Page;

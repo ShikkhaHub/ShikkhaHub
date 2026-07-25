@@ -1,0 +1,46 @@
+import type { ReactElement } from 'react';
+import React from 'react';
+
+import type { NextSeoProps } from 'next-seo';
+import TabContainer, {
+  Tab,
+} from '@shikkhahub/shared/src/components/tabs/TabContainer';
+import InAppNotificationsTab from '@shikkhahub/shared/src/components/notifications/InAppNotificationsTab';
+import useNotificationSettings from '@shikkhahub/shared/src/hooks/notifications/useNotificationSettings';
+import EmailNotificationsTab from '@shikkhahub/shared/src/components/notifications/EmailNotificationsTab';
+import { getSettingsLayout } from '../../components/layouts/SettingsLayout';
+
+import { defaultSeo } from '../../next-seo';
+import { getPageSeoTitles } from '../../components/layouts/utils';
+import { AccountPageContent } from '../../components/layouts/SettingsLayout/common';
+
+const seo: NextSeoProps = {
+  ...defaultSeo,
+  ...getPageSeoTitles('Notifications'),
+};
+
+const AccountNotificationsPage = (): ReactElement => {
+  const { isLoadingPreferences } = useNotificationSettings();
+
+  if (isLoadingPreferences) {
+    return <div className="w-full" />;
+  }
+
+  return (
+    <AccountPageContent>
+      <TabContainer className={{ header: 'h-14 px-4' }}>
+        <Tab label="Notifications">
+          <InAppNotificationsTab />
+        </Tab>
+        <Tab label="Email">
+          <EmailNotificationsTab />
+        </Tab>
+      </TabContainer>
+    </AccountPageContent>
+  );
+};
+
+AccountNotificationsPage.getLayout = getSettingsLayout;
+AccountNotificationsPage.layoutProps = { seo };
+
+export default AccountNotificationsPage;

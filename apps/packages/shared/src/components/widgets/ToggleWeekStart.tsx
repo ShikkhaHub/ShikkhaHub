@@ -1,0 +1,44 @@
+import type { ReactElement } from 'react';
+import React from 'react';
+import { DayOfWeek, getDefaultStartOfWeek } from '../../lib/date';
+import type { ClassName as RadioClassName } from '../fields/Radio';
+import { Radio } from '../fields/Radio';
+import { useReadingStreak } from '../../hooks/streaks';
+
+export const ToggleWeekStart = ({
+  className,
+}: {
+  className?: RadioClassName;
+}): ReactElement | null => {
+  const { streak, isLoading, updateStreakConfig, isUpdatingConfig } =
+    useReadingStreak();
+
+  const toggleWeekStart = (weekStart: string) => {
+    updateStreakConfig({ weekStart: parseInt(weekStart, 10) });
+  };
+
+  if (isLoading || !streak) {
+    return null;
+  }
+
+  return (
+    <Radio
+      aria-busy={isUpdatingConfig}
+      className={className}
+      disabled={isUpdatingConfig}
+      name="freeze-days"
+      onChange={toggleWeekStart}
+      value={getDefaultStartOfWeek(streak.weekStart)}
+      options={[
+        {
+          label: 'Friday to Saturday',
+          value: DayOfWeek.Sunday.toString(),
+        },
+        {
+          label: 'Saturday to Sunday',
+          value: DayOfWeek.Monday.toString(),
+        },
+      ]}
+    />
+  );
+};

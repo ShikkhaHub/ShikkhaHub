@@ -1,0 +1,32 @@
+import type { ReactElement } from 'react';
+import React from 'react';
+import classNames from 'classnames';
+import { PostContentWidget } from './PostContentWidget';
+import type { Post } from '../../../graphql/posts';
+import { PostReminderOptions } from './PostReminderOptions';
+import { useBookmarkReminderCover } from '../../../hooks/bookmark/useBookmarkReminderCover';
+
+interface PostContentReminderProps {
+  post: Post;
+  className?: string;
+}
+
+export function PostContentReminder({
+  post,
+  className,
+}: PostContentReminderProps): ReactElement | null {
+  const shouldShowReminder = useBookmarkReminderCover(post);
+
+  if (!shouldShowReminder) {
+    return null;
+  }
+
+  return (
+    <PostContentWidget
+      className={classNames('mt-6 w-full', className)}
+      title="Don’t have time now? Set a reminder"
+    >
+      <PostReminderOptions post={post} className="laptop:ml-auto" />
+    </PostContentWidget>
+  );
+}

@@ -1,0 +1,224 @@
+import type { ReactElement, ReactNode } from 'react';
+import React, { useEffect, useState } from 'react';
+import type { PublicProfile } from '@shikkhahub/shared/src/lib/user';
+import {
+  getProfile,
+  getProfileV2Extra,
+} from '@shikkhahub/shared/src/lib/user';
+import dynamic from 'next/dynamic';
+import { useRouter } from 'next/router';
+import type {
+  GetStaticPathsResult,
+  GetStaticPropsContext,
+  GetStaticPropsResult,
+} from 'next';
+import type { ParsedUrlQuery } from 'querystring';
+import type { ClientError } from 'graphql-request';
+import type { ProfileV2 } from '@shikkhahub/shared/src/graphql/users';
+import Head from 'next/head';
+import type { NextSeoProps } from 'next-seo';
+import { ClientQuestEventType } from '@shikkhahub/shared/src/graphql/quests';
+import { useProfile } from '@shikkhahub/shared/src/hooks/profile/useProfile';
+import { useTrackQuestClientEvent } from '@shikkhahub/shared/src/hooks/useTrackQuestClientEvent';
+import CustomAuthBanner from '@shikkhahub/shared/src/components/auth/CustomAuthBanner';
+import { useAuthContext } from '@shikkhahub/shared/src/contexts/AuthContext';
+import { useLogContext } from '@shikkhahub/shared/src/contexts/LogContext';
+import { LogEvent, TargetType } from '@shikkhahub/shared/src/lib/log';
+import { usePostReferrerContext } from '@shikkhahub/shared/src/contexts/PostReferrerContext';
+import { getLayout as getFooterNavBarLayout } from '../FooterNavBarLayout';
+import { getLayout as getMainLayout } from '../MainLayout';
+import { getPageSeoTitles } from '../utils';
+import { getAppOrigin } from '../../../lib/seo';
+import { ProfileWidgets } from '../../../../shared/src/features/profile/components/ProfileWidgets/ProfileWidgets';
+import { useProfileSidebarCollapse } from '../../../hooks/useProfileSidebarCollapse';
+
+const Custom404 = dynamic(
+  () => import(/* webpackChunkName: "404" */ '../../../pages/404'),
+);
+const appOrigin = getAppOrigin();
+
+export interface ProfileLayoutProps extends Partial<ProfileV2> {
+  noindex: boolean;
+  children?: ReactNode;
+}
+
+export const getOGImageUrl = (userId: string): string => {
+  const ogImageUrl = new URL(
+    `/devcards/v2/${userId}.png`,
+    process.env.NEXT_PUBLIC_API_URL,
+  );
+  ogImageUrl.searchParams.set('type', 'wide');
+  ogImageUrl.searchParams.set('r', Math.random().toString(36).substring(2, 5));
+  return ogImageUrl.toString();
+};
+
+const getTwitterHandle = (user: PublicProfile): string | undefined => {
+  const twitterLink = user.socialLinks?.find(
+    (link) => link.platform === 'twitter',
+  );
+  if (!twitterLink?.url) {
+    return undefined;
+  }
+  // Extract handle from URL like https://x.com/username or https://twitter.com/username
+  const match = twitterLink.url.match(/(?:twitter\.com|x\.com)\/([^/?]+)/);
+  return match?.[1];
+};
+
+export const getProfileSeoDefaults = (
+  user: PublicProfile,
+  seoOverrides: NextSeoProps,
+  noindex: boolean,
+): NextSeoProps => {
+  const profileSeoTitles = getPageSeoTitles(`${user.name} (@${user.username})`);
+  const openGraphImages = [{ url: getOGImageUrl(user.id) }];
+
+  return {
+    title: profileSeoTitles.title,
+    description: user.bio ? user.bio : `Check out ${user.name}'s profile`,
+    // Intentionally canonicalize profile surfaces to the main username URL.
+    canonical: `${appOrigin}/${user.username}`,
+    twitter: {
+      handle: getTwitterHandle(user),
+    },
+    noindex,
+    nofollow: noindex,
+    ...seoOverrides,
+    openGraph: {
+      ...profileSeoTitles.openGraph,
+      images: openGraphImages,
+      ...seoOverrides.openGraph,
+    },
+  };
+};
+
+export default function ProfileLayout({
+  user: initialUser,
+  userStats,
+  sources,
+  children,
+}: ProfileLayoutProps): ReactElement {
+  const router = useRouter();
+  const { isFallback } = router;
+  const { user } = useProfile(initialUser);
+  const { user: viewer } = useAuthContext();
+  const [trackedView, setTrackedView] = useState(false);
+  const { logEvent } = useLogContext();
+  const referrerPost = usePostReferrerContext()?.referrerPost;
+  useTrackQuestClientEvent({
+    eventType: ClientQuestEventType.ViewUserProfile,
+    enabled: !!user && !!viewer?.id && viewer.id !== user.id,
+    eventKey: user ? `profile:${user.id}` : undefined,
+  });
+
+  // Auto-collapse sidebar on small screens
+  useProfileSidebarCollapse();
+
+  useEffect(() => {
+    if (trackedView || !user) {
+      return;
+    }
+
+    logEvent({
+      event_name: LogEvent.ProfileView,
+      target_id: user.id,
+      ...(!!referrerPost && {
+        extra: JSON.stringify({
+          referrer_target_id: referrerPost.id,
+          referrer_target_type: TargetType.Post,
+          author: user?.id && referrerPost.author?.id === user.id ? 1 : 0,
+        }),
+      }),
+    });
+    setTrackedView(true);
+  }, [user, trackedView, logEvent, referrerPost]);
+
+  if (!isFallback && !user) {
+    return <Custom404 />;
+  }
+
+  if (!user) {
+    return <></>;
+  }
+
+  return (
+    <div className="profile-page m-auto flex w-full flex-col pb-12 tablet:pb-0 laptop:min-h-page laptop:max-w-5xl laptop:flex-row laptop:gap-4 laptop:p-4 laptop:pb-6 laptopL:max-w-6xl">
+      <Head>
+        <link rel="preload" as="image" href={user.image} />
+      </Head>
+      <main className="relative flex flex-1 flex-col laptop:max-w-2xl laptopL:max-w-3xl">
+        {children}
+      </main>
+      <aside className="hidden min-w-0 laptop:flex laptop:max-w-80 laptop:flex-shrink laptop:flex-col">
+        {userStats && sources && (
+          <ProfileWidgets
+            user={user}
+            userStats={userStats}
+            sources={sources}
+            className="w-full"
+          />
+        )}
+      </aside>
+    </div>
+  );
+}
+
+export const getLayout = (
+  page: ReactNode,
+  props: ProfileLayoutProps,
+): ReactNode =>
+  getFooterNavBarLayout(
+    getMainLayout(<ProfileLayout {...props}>{page}</ProfileLayout>, undefined, {
+      screenCentered: false,
+      customBanner: <CustomAuthBanner />,
+    }),
+  );
+
+interface ProfileParams extends ParsedUrlQuery {
+  userId: string;
+}
+
+export async function getStaticPaths(): Promise<GetStaticPathsResult> {
+  return { paths: [], fallback: true };
+}
+
+export async function getStaticProps({
+  params,
+}: GetStaticPropsContext<ProfileParams>): Promise<
+  GetStaticPropsResult<Omit<ProfileLayoutProps, 'children'>>
+> {
+  const userId = params?.userId;
+  if (!userId) {
+    return {
+      props: { noindex: true },
+      revalidate: 60,
+    };
+  }
+  try {
+    const user = await getProfile(userId);
+    if (!user) {
+      return {
+        props: { noindex: true },
+        revalidate: 60,
+      };
+    }
+    const data = await getProfileV2Extra(user.id);
+
+    return {
+      props: {
+        user,
+        ...data,
+        noindex: !!user.noindex,
+      },
+      revalidate: 60,
+    };
+  } catch (err) {
+    const clientError = err as ClientError;
+    if (clientError?.response?.errors?.[0]?.extensions?.code === 'FORBIDDEN') {
+      return {
+        props: { noindex: true },
+        revalidate: 60,
+      };
+    }
+    throw err;
+  }
+}

@@ -1,0 +1,91 @@
+import type { ReactElement } from 'react';
+import React, { useMemo } from 'react';
+import classNames from 'classnames';
+import type { PublicProfile } from '../../../lib/user';
+import Markdown from '../../../components/Markdown';
+import {
+  Button,
+  ButtonSize,
+  ButtonVariant,
+} from '../../../components/buttons/Button';
+import {
+  Typography,
+  TypographyType,
+  TypographyColor,
+} from '../../../components/typography/Typography';
+import { IconSize } from '../../../components/Icon';
+import { SimpleTooltip } from '../../../components/tooltips/SimpleTooltip';
+import { useLogContext } from '../../../contexts/LogContext';
+import { combinedClicks } from '../../../lib/click';
+import { LogEvent, TargetType } from '../../../lib/log';
+import { anchorDefaultRel } from '../../../lib/strings';
+import { getUserSocialLinks } from '../../../lib/socialLink';
+
+export interface AboutMeProps {
+  user: PublicProfile;
+  className?: string;
+}
+
+export function AboutMe({
+  user,
+  className,
+}: AboutMeProps): ReactElement | null {
+  const readme = user?.readmeHtml;
+  const { logEvent } = useLogContext();
+
+  // Markdown is supported only in the client due to sanitization
+  const isClient = typeof window !== 'undefined';
+
+  const socialLinks = useMemo(
+    () => getUserSocialLinks(user, IconSize.XSmall),
+    [user],
+  );
+
+  const shouldShowReadme = readme && isClient;
+  const shouldShowSocialLinks = socialLinks.length > 0;
+
+  if (!shouldShowReadme && !shouldShowSocialLinks) {
+    return null;
+  }
+
+  return (
+    <div className={classNames('flex flex-col gap-4 py-4', className)}>
+      <Typography
+        type={TypographyType.Body}
+        color={TypographyColor.Primary}
+        bold
+      >
+        About me
+      </Typography>
+
+      {shouldShowSocialLinks && (
+        <div className="flex flex-wrap items-center gap-2">
+          {socialLinks.map((link) => (
+            <SimpleTooltip key={link.id} content={link.label}>
+              <Button
+                variant={ButtonVariant.Subtle}
+                size={ButtonSize.Small}
+                tag="a"
+                href={link.url}
+                target="_blank"
+                rel={anchorDefaultRel}
+                icon={link.icon}
+                aria-label={link.label}
+                data-testid={`social-link-${link.id}`}
+                {...combinedClicks(() => {
+                  logEvent({
+                    event_name: LogEvent.Click,
+                    target_type: TargetType.SocialLink,
+                    target_id: link.id,
+                  });
+                })}
+              />
+            </SimpleTooltip>
+          ))}
+        </div>
+      )}
+
+      {shouldShowReadme && <Markdown content={readme} />}
+    </div>
+  );
+}

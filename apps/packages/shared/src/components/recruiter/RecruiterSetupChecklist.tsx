@@ -1,0 +1,256 @@
+import type { ReactElement } from 'react';
+import React, { useCallback, useMemo } from 'react';
+import classNames from 'classnames';
+import { useQuery } from '@tanstack/react-query';
+import {
+  Typography,
+  TypographyColor,
+  TypographyType,
+} from '../typography/Typography';
+import {
+  OrganizationIcon,
+  UserIcon,
+  SlackIcon,
+  VIcon,
+  ArrowIcon,
+} from '../icons';
+import { IconSize } from '../Icon';
+import { useAuthContext } from '../../contexts/AuthContext';
+import { useLazyModal } from '../../hooks/useLazyModal';
+import { LazyModal } from '../modals/common/types';
+import { fallbackImages } from '../../lib/config';
+import { settingsUrl, recruiterUrl } from '../../lib/constants';
+import Link from '../utilities/Link';
+import { anchorDefaultRel } from '../../lib/strings';
+import type { Opportunity } from '../../features/opportunity/types';
+import { userProfileQueryOptions } from '../../lib/user';
+
+type ChecklistItem = {
+  id: string;
+  title: string;
+  description: string;
+  icon: ReactElement;
+  completed: boolean;
+  href?: string;
+  onClick?: () => void;
+};
+
+export type RecruiterSetupChecklistProps = {
+  opportunity?: Pick<Opportunity, 'id' | 'organization' | 'flags'>;
+  className?: string;
+};
+
+const ChecklistItemRow = ({ item }: { item: ChecklistItem }): ReactElement => {
+  const content = (
+    <div
+      className={classNames(
+        'flex cursor-pointer items-center gap-3 rounded-8 border border-border-subtlest-tertiary bg-background-default p-3 transition-colors',
+        item.completed
+          ? 'pointer-events-none border-status-success'
+          : 'hover:border-border-subtlest-secondary hover:bg-surface-hover',
+      )}
+    >
+      <div
+        className={classNames(
+          'flex size-10 shrink-0 items-center justify-center rounded-10',
+          item.completed
+            ? 'bg-status-success text-white'
+            : 'bg-surface-float text-text-tertiary',
+        )}
+      >
+        {item.completed ? <VIcon size={IconSize.Small} /> : item.icon}
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <Typography
+          type={TypographyType.Callout}
+          bold
+          className={classNames(
+            item.completed && 'text-text-disabled line-through',
+          )}
+        >
+          {item.title}
+        </Typography>
+        <Typography
+          type={TypographyType.Caption1}
+          color={TypographyColor.Tertiary}
+          className={classNames(item.completed && 'line-through')}
+        >
+          {item.description}
+        </Typography>
+      </div>
+      {!item.completed && (
+        <ArrowIcon
+          size={IconSize.Small}
+          className="shrink-0 rotate-90 text-text-tertiary"
+        />
+      )}
+    </div>
+  );
+
+  if (item.onClick) {
+    return (
+      <button type="button" onClick={item.onClick} className="w-full text-left">
+        {content}
+      </button>
+    );
+  }
+
+  if (item.href) {
+    return (
+      <Link href={item.href}>
+        <a href={item.href} rel={anchorDefaultRel} className="block">
+          {content}
+        </a>
+      </Link>
+    );
+  }
+
+  return content;
+};
+
+export const RecruiterSetupChecklist = ({
+  opportunity,
+  className,
+}: RecruiterSetupChecklistProps): ReactElement => {
+  const { organization, flags } = opportunity || {};
+  const { user } = useAuthContext();
+  const { data: userProfile } = useQuery(
+    userProfileQueryOptions({ id: user?.id }),
+  );
+  const { openModal } = useLazyModal();
+
+  // Company profile completion checks
+  const isCompanyComplete = useMemo(() => {
+    if (!organization) {
+      return false;
+    }
+    return Boolean(
+      organization.image &&
+        organization.website &&
+        organization.description &&
+        organization.location,
+    );
+  }, [organization]);
+
+  // Personal profile completion checks
+  const hasVerifiedCompany = useMemo(
+    () => Boolean(userProfile?.companies && userProfile.companies.length > 0),
+    [userProfile?.companies],
+  );
+  const hasProfileImage = useMemo(
+    () =>
+      Boolean(
+        userProfile?.image && userProfile.image !== fallbackImages.avatar,
+      ),
+    [userProfile?.image],
+  );
+  const hasHeadline = useMemo(
+    () => Boolean(userProfile?.bio),
+    [userProfile?.bio],
+  );
+  const isProfileComplete =
+    hasVerifiedCompany && hasProfileImage && hasHeadline;
+
+  // Slack connection check
+  const hasSlackConnection = Boolean(
+    organization?.recruiterSubscriptionFlags?.hasSlackConnection,
+  );
+
+  const handleConnectSlack = useCallback(() => {
+    if (!user || !opportunity || !organization?.name) {
+      return;
+    }
+
+    const baseName = organization.name;
+    const sanitizedName = baseName
+      .toLowerCase()
+      .replace(/[^a-z0-9-_]/g, '-')
+      .replace(/-+/g, '-')
+      .substring(0, 80);
+
+    const channelName = `dailydev-${sanitizedName}`;
+
+    openModal({
+      type: LazyModal.SlackChannelConfirmation,
+      props: {
+        email: user.email || '',
+        channelName,
+        opportunityId: opportunity.id,
+      },
+    });
+  }, [user, opportunity, openModal, organization?.name]);
+
+  const items: ChecklistItem[] = useMemo(
+    () =>
+      [
+        {
+          id: 'company',
+          title: 'Complete company profile',
+          description:
+            'Developers trust companies they can verify. Complete profiles build that trust.',
+          icon: <OrganizationIcon size={IconSize.Small} />,
+          completed: isCompanyComplete,
+          href: organization?.id
+            ? `${recruiterUrl}/organizations/${organization.id}`
+            : undefined,
+        },
+        {
+          id: 'profile',
+          title: 'Verify your identity',
+          description:
+            'Developers share their real profiles. Earn their trust by doing the same.',
+          icon: <UserIcon size={IconSize.Small} />,
+          completed: isProfileComplete,
+          href: `${settingsUrl}/profile`,
+        },
+        flags?.showSlack && {
+          id: 'slack',
+          title: 'Connect on Slack',
+          description: 'Direct line to our team. No tickets, real humans.',
+          icon: <SlackIcon size={IconSize.Small} />,
+          completed: hasSlackConnection,
+          onClick: hasSlackConnection ? undefined : handleConnectSlack,
+        },
+      ].filter(Boolean) as ChecklistItem[],
+    [
+      isCompanyComplete,
+      isProfileComplete,
+      hasSlackConnection,
+      organization?.id,
+      handleConnectSlack,
+      flags?.showSlack,
+    ],
+  );
+
+  const completedCount = items.filter((item) => item.completed).length;
+
+  if (!userProfile) {
+    return null;
+  }
+
+  return (
+    <div
+      className={classNames(
+        'flex w-full max-w-md flex-col gap-4 rounded-16 border border-border-subtlest-tertiary bg-background-subtle p-4',
+        className,
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <Typography type={TypographyType.Body} bold>
+          Maximize your response rates
+        </Typography>
+        <Typography
+          type={TypographyType.Caption1}
+          color={TypographyColor.Tertiary}
+        >
+          {completedCount}/{items.length} completed
+        </Typography>
+      </div>
+      <div className="flex flex-col gap-2">
+        {items.map((item) => (
+          <ChecklistItemRow key={item.id} item={item} />
+        ))}
+      </div>
+    </div>
+  );
+};
