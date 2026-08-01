@@ -1,1 +1,0 @@
-helm/values/** filter=git-crypt diff=git-crypt

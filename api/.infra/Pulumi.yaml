@@ -1,6 +1,0 @@
-name: api
-runtime:
-  name: nodejs
-  options:
-    packagemanager: pnpm
-description: Infrastructure for daily-api
