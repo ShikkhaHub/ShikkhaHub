@@ -1,4 +1,0 @@
-.promotion {
-  right: calc((100vw - $pageMaxWidth) / 4 - $promotionWidth / 2);
-  width: $promotionWidth;
-}
