@@ -79,6 +79,9 @@ class Institution(Base):
     # Courses offered
     courses = relationship("Course", back_populates="institution")
     
+    # Reviews
+    reviews = relationship("InstitutionReview", back_populates="institution", cascade="all, delete-orphan")
+    
     # Affiliations
     affiliations = relationship("Affiliation", foreign_keys="Affiliation.institution_id", back_populates="institution")
     affiliated_members = relationship("Affiliation", foreign_keys="Affiliation.parent_institution_id", back_populates="parent_institution")

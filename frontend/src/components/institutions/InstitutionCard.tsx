@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { MapPin, Building2, ExternalLink } from 'lucide-react';
 import { Card, CardContent } from '../common/Card';
-import { CompareButton } from '../CompareButton';
+import CompareButton from '../CompareButton';
 import type { Institution } from '../../types';
 
 interface InstitutionCardProps {
@@ -48,7 +48,7 @@ export function InstitutionCard({ institution, showActions = true }: Institution
           </div>
           
           {showActions && (
-            <CompareButton institutionId={institution.id} />
+            <CompareButton institution={institution} size="sm" />
           )}
         </div>
 

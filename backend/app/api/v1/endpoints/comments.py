@@ -1,6 +1,6 @@
 """Comments API endpoints."""
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
@@ -16,7 +16,7 @@ router = APIRouter()
 # Schemas
 class CommentCreate(BaseModel):
     content: str = Field(..., min_length=1, max_length=2000)
-    content_type: str = Field(..., regex="^(institution|review|answer)$")
+    content_type: str = Field(..., pattern="^(institution|review|answer)$")
     content_id: int
     parent_id: Optional[int] = None
 
@@ -47,6 +47,7 @@ class CommentResponse(BaseModel):
 @router.post("/comments", response_model=CommentResponse)
 @standard_limit()
 def create_comment(
+    request: Request,
     comment: CommentCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)

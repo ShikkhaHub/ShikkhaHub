@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
@@ -19,9 +18,6 @@ import {
   ScrollText,
   Settings,
   Shield,
-  ChevronDown,
-  ChevronRight,
-  Menu,
   X,
   School,
 } from 'lucide-react';

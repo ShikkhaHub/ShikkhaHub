@@ -1,0 +1,14 @@
+{
+  "extends": ["universe/native", "universe/shared/typescript-analysis"],
+  "overrides": [
+    {
+      "files": ["*.ts", "*.tsx", ".eslintrc.js"],
+      "parserOptions": {
+        "project": "./tsconfig.json"
+      }
+    }
+  ],
+  "env": {
+    "react-native/react-native": true
+  }
+}

@@ -3,7 +3,8 @@
 ## Overview
 
 ShikkhaHub supports multiple deployment options:
-- Docker Compose (recommended)
+- Vercel (serverless, recommended for hosting on Vercel)
+- Docker Compose (recommended for self-hosting)
 - Kubernetes (future)
 - Manual deployment
 
@@ -13,6 +14,87 @@ ShikkhaHub supports multiple deployment options:
 - Docker & Docker Compose
 - Domain name with SSL certificate
 - 4GB+ RAM, 2+ CPU cores
+
+## Vercel Deployment
+
+ShikkhaHub is a monorepo with two Vercel projects (one for `frontend/`, one for `backend/`).
+
+### Architecture
+
+- **Frontend** (`frontend/`) — Vite + React static site. Vercel detects the Vite
+  framework preset. Client-side routes are rewritten to `index.html` via
+  `frontend/vercel.json`.
+- **Backend** (`backend/`) — FastAPI served as a single Vercel Function. Vercel
+  auto-detects the FastAPI app at `backend/app/main.py` (zero-config). The whole
+  app runs on **Python 3.12** (pinned in `backend/vercel.json`) and matches the
+  full request path itself, so routes like `/api/v1/institutions` work as-is.
+
+### 1. Create the projects (one-time)
+
+```bash
+# Frontend project (root directory: frontend)
+vercel link --yes --project shikkhahub-frontend
+cd frontend && vercel link && cd ..
+
+# Backend project (root directory: backend)
+cd backend && vercel link && cd ..
+```
+
+Set `Root Directory` to `frontend` / `backend` respectively in each project's
+Settings if the link did not pick it up automatically.
+
+### 2. Configure environment variables
+
+Backend project (Production):
+```env
+DATABASE_URL=postgresql://user:password@host:5432/shikkhahub   # Managed Postgres (e.g. Vercel Postgres / Neon / Supabase)
+BACKEND_CORS_ORIGINS=["https://<frontend>.vercel.app"]
+SECRET_KEY=<random-32-char-string>
+ENVIRONMENT=production
+DEBUG=false
+```
+
+Frontend project (Production):
+```env
+VITE_API_URL=https://<backend>.vercel.app/api/v1
+```
+
+> **Database note:** Vercel's filesystem is ephemeral and read-only, so SQLite
+> (`DATABASE_URL=sqlite:///...`) will **not** persist. A managed PostgreSQL
+> database is required. Tables are created automatically on cold start via
+> `init_db()`.
+
+### 3. Deploy
+
+```bash
+# Frontend
+cd frontend && vercel --prod
+
+# Backend
+cd backend && vercel --prod
+```
+
+### CI/CD
+
+Pushes to `main` auto-deploy both projects via
+`.github/workflows/vercel-deploy.yml`. Configure these GitHub secrets:
+
+| Secret | Value |
+| --- | --- |
+| `VERCEL_TOKEN` | Vercel access token |
+| `VERCEL_ORG_ID` | Team ID (found in `.vercel/project.json` → `orgId`) |
+| `VERCEL_PROJECT_ID_FRONTEND` | Frontend project ID |
+| `VERCEL_PROJECT_ID_BACKEND` | Backend project ID |
+
+### Serverless constraints handled by the code
+
+- The background scheduler and automated backups are **disabled** on Vercel
+  (checked via the `VERCEL` env var in `backend/app/main.py`).
+- Redis and Elasticsearch are optional: if unreachable they degrade gracefully
+  (in-memory rate limiting, DB-backed search fallback).
+- Rate limiting uses forwarded headers (`x-forwarded-for` / `x-real-ip`) to work
+  behind Vercel's proxy (`backend/app/core/rate_limit.py`).
+- Prefer cold starts: the app keeps dependencies lean and defers heavy work.
 
 ## Quick Deploy
 

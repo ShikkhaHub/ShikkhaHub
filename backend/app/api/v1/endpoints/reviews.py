@@ -1,6 +1,6 @@
 """Review and rating API endpoints."""
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
@@ -88,6 +88,7 @@ class ReportCreate(BaseModel):
 @router.post("/reviews", response_model=ReviewResponse)
 @standard_limit()
 def create_review(
+    request: Request,
     review: ReviewCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)

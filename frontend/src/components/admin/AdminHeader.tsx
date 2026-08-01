@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Search, Bell, ChevronDown, Menu, User, Settings, LogOut } from 'lucide-react';
-import { cn } from '../../lib/utils';
 
 interface AdminHeaderProps {
   onMenuClick: () => void;

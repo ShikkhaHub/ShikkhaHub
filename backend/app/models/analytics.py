@@ -109,7 +109,7 @@ class ClickEvent(Base):
     session_id = Column(String(100), nullable=True, index=True)
     
     # Additional data
-    metadata = Column(Text, nullable=True)  # JSON with event-specific data
+    event_data = Column("metadata", Text, nullable=True)  # JSON with event-specific data
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, index=True)

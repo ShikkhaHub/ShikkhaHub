@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.DEV ? '/api/v1' : 'http://localhost:8000/api/v1'
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1'
 
 export interface Division {
   id: number
@@ -27,7 +27,7 @@ export interface Institution {
   is_featured: boolean
   view_count: number
   data_source?: string
-  last_updated: string
+  last_updated?: string
 }
 
 export interface InstitutionListResponse {
