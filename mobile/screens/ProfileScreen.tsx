@@ -1,17 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, Alert } from 'react-native';
-import { useAuthStore } from '../hooks/useStore';
+import { useAuthStore } from '../hooks/useAuthStore';
 import { apiService } from '../services/api';
 
-const ProfileScreen = ({ navigation }: any) => {
-  const { user, logout, token } = useAuthStore();
+export default function ProfileScreen({ navigation }: any) {
+  const { user, logout } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
-
-  useEffect(() => {
-    if (!token) {
-      navigation.replace('Auth');
-    }
-  }, [token, navigation]);
 
   const handleLogout = async () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
@@ -23,7 +17,6 @@ const ProfileScreen = ({ navigation }: any) => {
           try {
             setIsLoading(true);
             await logout();
-            navigation.replace('Auth');
           } catch (error) {
             Alert.alert('Error', 'Failed to logout');
           } finally {
@@ -208,5 +201,3 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
 });
-
-export default ProfileScreen;
