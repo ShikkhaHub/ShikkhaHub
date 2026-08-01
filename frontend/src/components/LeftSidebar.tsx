@@ -121,20 +121,23 @@ export default function LeftSidebar({ isMobileOpen = false, onClose }: LeftSideb
       </nav>
 
       {/* Go Premium Card */}
-      <div className="p-4 mt-auto">
-        <div className="relative overflow-hidden rounded-2xl p-5 bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600">
-          <div className="absolute inset-0 bg-white/10" />
-          <div className="absolute -top-10 -right-10 w-24 h-24 bg-white/20 rounded-full blur-2xl" />
+      <div className="p-4 mt-auto border-t border-gray-100">
+        <div className="relative overflow-hidden rounded-2xl p-6 bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600">
+          {/* Animated gradient background elements */}
+          <div className="absolute inset-0 opacity-20">
+            <div className="absolute -top-8 -right-8 w-32 h-32 bg-white rounded-full blur-3xl" />
+            <div className="absolute -bottom-4 -left-4 w-24 h-24 bg-white/30 rounded-full blur-2xl" />
+          </div>
           
           <div className="relative z-10">
-            <div className="flex items-center gap-2 mb-2">
-              <Crown className="w-5 h-5 text-yellow-300" />
+            <div className="flex items-center gap-2 mb-3">
+              <Crown className="w-5 h-5 text-yellow-300 animate-bounce" />
               <span className="text-sm font-semibold text-white">Go Premium</span>
             </div>
-            <p className="text-xs text-indigo-100 mb-4 leading-relaxed">
+            <p className="text-xs text-indigo-100 mb-5 leading-relaxed">
               Unlock unlimited access to all features and premium content.
             </p>
-            <button className="w-full py-2.5 px-4 bg-white text-indigo-600 text-sm font-semibold rounded-xl hover:bg-indigo-50 transition-colors duration-200 shadow-soft">
+            <button className="w-full py-2.5 px-4 bg-white text-indigo-600 text-sm font-semibold rounded-lg hover:bg-indigo-50 active:scale-95 transition-all duration-200 shadow-soft hover:shadow-card">
               Upgrade Now
             </button>
           </div>
