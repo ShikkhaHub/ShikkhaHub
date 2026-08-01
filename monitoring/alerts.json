@@ -1,0 +1,105 @@
+{
+  "alerts": [
+    {
+      "name": "high_error_rate",
+      "severity": "critical",
+      "condition": "error_rate > 0.01",
+      "duration": "5m",
+      "channels": ["slack", "pagerduty"],
+      "message": "Error rate exceeded 1% in the last 5 minutes",
+      "runbook": "https://wiki.shikkhahub.edu.bd/runbooks/high-error-rate"
+    },
+    {
+      "name": "backend_down",
+      "severity": "critical",
+      "condition": "api_response_time > 5000",
+      "duration": "2m",
+      "channels": ["slack", "pagerduty", "email"],
+      "message": "Backend API response time exceeded 5 seconds",
+      "runbook": "https://wiki.shikkhahub.edu.bd/runbooks/slow-api"
+    },
+    {
+      "name": "database_errors",
+      "severity": "critical",
+      "condition": "db_connection_errors > 10",
+      "duration": "1m",
+      "channels": ["slack", "pagerduty"],
+      "message": "Database connection errors detected",
+      "runbook": "https://wiki.shikkhahub.edu.bd/runbooks/database-errors"
+    },
+    {
+      "name": "high_memory_usage",
+      "severity": "warning",
+      "condition": "memory_usage > 0.8",
+      "duration": "10m",
+      "channels": ["slack"],
+      "message": "Server memory usage above 80%"
+    },
+    {
+      "name": "slow_search",
+      "severity": "warning",
+      "condition": "search_latency_p95 > 500",
+      "duration": "5m",
+      "channels": ["slack"],
+      "message": "Search latency p95 exceeded 500ms"
+    },
+    {
+      "name": "ssl_certificate_expiring",
+      "severity": "warning",
+      "condition": "ssl_days_remaining < 7",
+      "duration": "1h",
+      "channels": ["email"],
+      "message": "SSL certificate expiring in less than 7 days"
+    },
+    {
+      "name": "rate_limit_exceeded",
+      "severity": "info",
+      "condition": "rate_limit_hits > 100",
+      "duration": "5m",
+      "channels": ["slack"],
+      "message": "Rate limiting activated"
+    },
+    {
+      "name": "uptime_degraded",
+      "severity": "warning",
+      "condition": "uptime_24h < 0.99",
+      "duration": "1h",
+      "channels": ["email"],
+      "message": "Uptime below 99% in last 24 hours"
+    }
+  ],
+  "notification_rules": {
+    "slack": {
+      "enabled": true,
+      "webhook": "${SLACK_WEBHOOK_URL}",
+      "channel": "#alerts"
+    },
+    "pagerduty": {
+      "enabled": true,
+      "integration_key": "${PAGERDUTY_INTEGRATION_KEY}",
+      "urgency": "high"
+    },
+    "email": {
+      "enabled": true,
+      "recipients": ["devops@shikkhahub.edu.bd"],
+      "from": "alerts@shikkhahub.edu.bd"
+    }
+  },
+  "escalation_policy": {
+    "critical": {
+      "first_alert": 0,
+      "escalate_after": "5m",
+      "teams": ["on-call", "platform"]
+    },
+    "warning": {
+      "first_alert": 0,
+      "escalate_after": "15m",
+      "teams": ["platform"]
+    },
+    "info": {
+      "first_alert": "batch",
+      "batch_interval": "1h",
+      "teams": ["ops"]
+    }
+  }
+}
