@@ -375,6 +375,15 @@
 * [ ] Database migration system (Alembic in deploy scripts)
 * [ ] Rollback procedures (rollback.sh with database restore)
 
+### ✅ Vercel Serverless Deployment
+* [ ] `frontend/vercel.json` — Vite SPA framework, `pnpm build`, output `dist`, SPA catch-all rewrite
+* [ ] `backend/vercel.json` — FastAPI single Function, pinned `python3.12` (psycopg2 has no 3.13 wheel), `maxDuration 60`, `excludeFiles`
+* [ ] `frontend/.env.example` — documents `VITE_API_URL`
+* [ ] Backend made serverless-safe (proxy-aware rate limiting, scheduler disabled via `VERCEL=1`)
+* [ ] CI/CD workflow `.github/workflows/vercel-deploy.yml` (deploy-frontend + deploy-backend jobs)
+* [ ] Deployment docs (docs/DEPLOYMENT.md Vercel section, README deploy section)
+* [ ] Push commit and set Vercel secrets (VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID_*)
+
 ### ✅ Infrastructure as Code
 * [ ] Terraform/CloudFormation templates
 * [ ] Docker Compose for local dev
@@ -424,7 +433,23 @@ Everything else (AI, UI, growth) becomes easy after that.
 
 ---
 
-## 📋 CURRENT STATUS (Updated: 2026-05-01)
+## 📋 CURRENT STATUS (Updated: 2026-08-01)
+
+**Vercel Deployment Support Complete** - Monorepo migrated for serverless deployment as two separate Vercel projects (frontend + backend):
+- [ ] `frontend/vercel.json` (Vite SPA framework, SPA rewrites to index.html)
+- [ ] `backend/vercel.json` (Python 3.12 runtime, 60s maxDuration, excludeFiles)
+- [ ] API base URL env-driven (`VITE_API_URL` with `/api/v1` fallback)
+- [ ] Proxy-aware rate limiter (x-forwarded-for / x-real-ip)
+- [ ] Scheduler disabled on Vercel (serverless-safe startup)
+- [ ] CI/CD workflow `.github/workflows/vercel-deploy.yml` (frontend + backend jobs)
+- [ ] Backend smoke-tested: all endpoints green (health, institutions, locations, search w/ ES fallback)
+- [ ] Frontend `pnpm build` passing (298 kB JS / 83.6 kB gzip)
+- [ ] Deployment docs in `docs/DEPLOYMENT.md` + README
+- ⚠️ **BLOCKED**: Commit `51de5ec` ready locally, push pending — no GitHub credentials in sandbox. Run `git push origin v0/mdselim606570-9293-d1524972` from a machine with auth, then link secrets `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID_FRONTEND`, `VERCEL_PROJECT_ID_BACKEND`.
+
+---
+
+## 📋 PREVIOUS STATUS (2026-05-01)
 
 **Frontend Infrastructure ALL Phases Complete** - Full frontend foundation: types, API, hooks, stores, UI components, SearchBar, InstitutionCard, InstitutionDetail. Ready for integration with existing pages.
 
@@ -475,14 +500,15 @@ Everything else (AI, UI, growth) becomes easy after that.
 - [ ] Live scrapers (SSL/404 issues fixed, BMEB & MoE scrapers created)
 
 ### 📅 NEXT UP (Priority Order)
-1. **Mobile App** - React Native app (future)
-2. **Growth Channels** - YouTube content, Campus ambassadors
-3. **User Experience** - Saved searches, search history, notifications
+1. **Vercel deploy** - Push commit `51de5ec`, link both projects, set CI/CD secrets, first production deploy
+2. **Mobile App** - React Native app (future)
+3. **Growth Channels** - YouTube content, Campus ambassadors
+4. **User Experience** - Saved searches, search history, notifications
 
 ### 🎯 CRITICAL GAPS IDENTIFIED
-- **DevOps**: ✅ CI/CD, staging, and deployment automation implemented
+- **DevOps**: ✅ CI/CD, staging, and deployment automation implemented (incl. Vercel serverless deployment for frontend + backend)
 - **Testing**: ✅ Test coverage implemented with pytest
-- **Documentation**: ✅ API docs, developer guides, deployment guide complete
+- **Documentation**: ✅ API docs, developer guides, deployment guide complete (incl. Vercel deploy section)
 - **Project Structure**: ✅ Service layer, Makefile, pre-commit hooks, organized folders
 - **Monitoring**: ✅ Error tracking (Sentry), performance monitoring, metrics collection
 - **Data**: ✅ Data validation, duplicate detection, freshness alerts implemented
