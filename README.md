@@ -219,14 +219,31 @@ cd backend && pytest tests/test_auth.py -v
 
 ## 🚀 Deployment
 
-### Staging
+### Vercel (Serverless)
+
+The project is configured as a two-project monorepo (frontend + backend) for Vercel:
+
+```bash
+# Frontend (Vite static site, root: frontend)
+cd frontend && vercel --prod
+
+# Backend (FastAPI serverless function, root: backend)
+cd backend && vercel --prod
+```
+
+Set `VITE_API_URL` on the frontend project and `DATABASE_URL` (managed Postgres —
+SQLite is not persistent on Vercel), `SECRET_KEY`, `BACKEND_CORS_ORIGINS` on the
+backend project. Pushes to `main` auto-deploy both via GitHub Actions
+(`.github/workflows/vercel-deploy.yml`).
+
+See the [Deployment Guide](docs/DEPLOYMENT.md#vercel-deployment) for full details.
+
+### Docker / Self-hosted
 
 ```bash
 # Deploy to staging
 ./scripts/deploy.sh staging
 ```
-
-### Production
 
 ```bash
 # Deploy to production

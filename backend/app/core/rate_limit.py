@@ -1,9 +1,26 @@
 """Rate limiting configuration for FastAPI."""
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from fastapi import Request, FastAPI
 from app.core.redis import get_redis_client
+
+
+def get_remote_address(request: Request) -> str:
+    """Extract a stable client identifier.
+
+    Behind proxies (e.g. Vercel) `request.client` may be missing, so prefer
+    forwarded headers and fall back to a local value rather than crashing.
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+    if request.client:
+        return request.client.host
+    return "127.0.0.1"
+
 
 # Create limiter with Redis storage if available, otherwise in-memory
 def get_limiter() -> Limiter:
@@ -13,14 +30,13 @@ def get_limiter() -> Limiter:
         redis_client = get_redis_client()
         if redis_client:
             # Use Redis storage for rate limiting
-            from slowapi.limits import RateLimitItemPerSecond
             return Limiter(
                 key_func=get_remote_address,
                 storage_uri=f"redis://{redis_client.connection_pool.connection_kwargs.get('host', 'localhost')}:{redis_client.connection_pool.connection_kwargs.get('port', 6379)}/1"
             )
     except Exception:
         pass
-    
+
     # Fallback to in-memory storage
     return Limiter(key_func=get_remote_address)
 

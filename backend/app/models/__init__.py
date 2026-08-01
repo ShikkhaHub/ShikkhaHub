@@ -7,6 +7,11 @@ from app.models.analytics import (
     SearchEvent, PageView, ClickEvent, 
     PopularSearch, NoResultSearch, DailyAnalytics
 )
+from app.models.user import User, UserRole
+from app.models.review import InstitutionReview, ReviewHelpfulVote, ReviewReport
+from app.models.qa import Question, Answer, QuestionVote, AnswerVote
+from app.models.comment import Comment, CommentLike
+from app.models.chat import ChatSession, ChatMessage
 
 __all__ = [
     "Division",
@@ -28,4 +33,17 @@ __all__ = [
     "PopularSearch",
     "NoResultSearch",
     "DailyAnalytics",
+    "User",
+    "UserRole",
+    "InstitutionReview",
+    "ReviewHelpfulVote",
+    "ReviewReport",
+    "Question",
+    "Answer",
+    "QuestionVote",
+    "AnswerVote",
+    "Comment",
+    "CommentLike",
+    "ChatSession",
+    "ChatMessage",
 ]

@@ -2,7 +2,7 @@
 Admin endpoints for data import, verification, moderation, monitoring and data quality.
 """
 
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, BackgroundTasks, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, case
 from typing import List, Optional
@@ -136,6 +136,7 @@ def trigger_scrape(
 @router.get("/institutions/pending")
 @admin_limit()
 def list_pending_institutions(
+    request: Request,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_admin_user),
@@ -161,6 +162,7 @@ def list_pending_institutions(
 @router.post("/institutions/{institution_id}/verify")
 @admin_limit()
 def verify_institution(
+    request: Request,
     institution_id: int,
     verification_notes: Optional[str] = None,
     current_user: User = Depends(get_current_admin_user),
@@ -181,6 +183,7 @@ def verify_institution(
 @router.post("/institutions/{institution_id}/reject")
 @admin_limit()
 def reject_institution(
+    request: Request,
     institution_id: int,
     reason: str,
     current_user: User = Depends(get_current_admin_user),
@@ -200,6 +203,7 @@ def reject_institution(
 @router.post("/institutions/{institution_id}/flag")
 @admin_limit()
 def flag_institution(
+    request: Request,
     institution_id: int,
     reason: str,
     current_user: User = Depends(get_current_admin_user),
@@ -220,6 +224,7 @@ def flag_institution(
 @router.get("/moderation/reviews/pending")
 @admin_limit()
 def list_pending_reviews(
+    request: Request,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_admin_user),
@@ -244,6 +249,7 @@ def list_pending_reviews(
 @router.get("/moderation/reviews/flagged")
 @admin_limit()
 def list_flagged_reviews(
+    request: Request,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_admin_user),
@@ -268,6 +274,7 @@ def list_flagged_reviews(
 @router.get("/moderation/reports")
 @admin_limit()
 def list_reports(
+    request: Request,
     status: str = Query("pending", enum=["pending", "resolved"]),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -295,6 +302,7 @@ def list_reports(
 @router.post("/moderation/reports/{report_id}/resolve")
 @admin_limit()
 def resolve_report(
+    request: Request,
     report_id: int,
     action: str,  # "dismiss", "remove_content", "warn_user"
     current_user: User = Depends(get_current_admin_user),
@@ -328,6 +336,7 @@ def resolve_report(
 @router.get("/dashboard/stats")
 @admin_limit()
 def get_dashboard_stats(
+    request: Request,
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
@@ -412,6 +421,7 @@ def get_dashboard_stats(
 @router.get("/dashboard/top-institutions")
 @admin_limit()
 def get_top_institutions(
+    request: Request,
     limit: int = Query(10, ge=1, le=50),
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
@@ -438,6 +448,7 @@ def get_top_institutions(
 @router.get("/dashboard/recent-activity")
 @admin_limit()
 def get_recent_activity(
+    request: Request,
     limit: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
@@ -512,6 +523,7 @@ def get_recent_activity(
 @router.get("/users")
 @admin_limit()
 def list_users(
+    request: Request,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     role: Optional[str] = Query(None, enum=["user", "admin", "super_admin", "moderator"]),
@@ -542,6 +554,7 @@ def list_users(
 @router.get("/users/{user_id}")
 @admin_limit()
 def get_user(
+    request: Request,
     user_id: int,
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
@@ -557,6 +570,7 @@ def get_user(
 @router.put("/users/{user_id}/role")
 @admin_limit()
 def update_user_role(
+    request: Request,
     user_id: int,
     role: str,
     current_user: User = Depends(get_current_super_admin),
@@ -579,6 +593,7 @@ def update_user_role(
 @router.post("/users/{user_id}/deactivate")
 @admin_limit()
 def deactivate_user(
+    request: Request,
     user_id: int,
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
@@ -600,6 +615,7 @@ def deactivate_user(
 @router.post("/users/{user_id}/activate")
 @admin_limit()
 def activate_user(
+    request: Request,
     user_id: int,
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)

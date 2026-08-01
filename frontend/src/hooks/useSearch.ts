@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { searchInstitutions, getAutocompleteSuggestions, trackSearch } from '../api';
+import type { SearchParams } from '../api';
 import { useDebounce } from './useDebounce';
-import type { SearchParams, SearchResult, AutocompleteSuggestion, Institution } from '../types';
+import type { SearchResult, AutocompleteSuggestion, Institution } from '../types';
 
 interface UseSearchOptions {
   debounceMs?: number;
@@ -46,7 +47,7 @@ export function useSearch(
   const [error, setError] = useState<Error | null>(null);
   const [suggestions, setSuggestions] = useState<AutocompleteSuggestion[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
-  const [searchEventId, setSearchEventId] = useState<number | null>(null);
+  const [, setSearchEventId] = useState<number | null>(null);
 
   const debouncedQuery = useDebounce(query, debounceMs);
 

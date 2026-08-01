@@ -294,7 +294,7 @@ export default function InstitutionDetail() {
                 <div className="flex justify-between">
                   <span className="text-gray-500">Last Updated</span>
                   <span className="font-medium text-gray-700">
-                    {new Date(institution.last_updated).toLocaleDateString()}
+                    {institution.last_updated ? new Date(institution.last_updated).toLocaleDateString() : '—'}
                   </span>
                 </div>
                 <div className="flex justify-between">

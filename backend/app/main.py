@@ -14,6 +14,7 @@ from app.core.monitoring import HealthChecker, metrics_collector
 from app.core.scheduler import init_scheduler, shutdown_scheduler
 from app.api.v1 import api_router
 import time
+import os
 import logging
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -140,18 +141,25 @@ async def startup_event():
         logger.error(f"Database initialization failed: {e}")
         # Don't raise - let the app start for health checks
     
-    # Initialize background task scheduler
-    try:
-        init_scheduler()
-        logger.info("Background task scheduler initialized")
-    except Exception as e:
-        logger.error(f"Scheduler initialization failed: {e}")
+    # Initialize background task scheduler.
+    # Serverless (Vercel) instances are ephemeral and short-lived, so
+    # long-running cron/backup tasks have no effect there.
+    if os.environ.get("VERCEL") == "1":
+        logger.info("Scheduler disabled on Vercel (serverless)")
+    else:
+        try:
+            init_scheduler()
+            logger.info("Background task scheduler initialized")
+        except Exception as e:
+            logger.error(f"Scheduler initialization failed: {e}")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown."""
     logger.info("Shutting down ShikkhaHub API...")
+    if os.environ.get("VERCEL") == "1":
+        return
     try:
         shutdown_scheduler()
         logger.info("Background tasks stopped")

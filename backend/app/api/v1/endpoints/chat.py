@@ -1,7 +1,7 @@
 """AI Chat endpoints for education assistant."""
 import uuid
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -67,6 +67,7 @@ def generate_session_title(first_message: str) -> str:
 @router.post("/chat", response_model=dict)
 @standard_limit()
 async def chat(
+    request: Request,
     message: ChatMessageCreate,
     current_user: Optional[User] = Depends(get_current_user),
     db: Session = Depends(get_db)

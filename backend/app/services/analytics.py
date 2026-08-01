@@ -203,7 +203,7 @@ class AnalyticsTracker:
             institution_id=institution_id,
             user_id=user_id,
             session_id=session_id,
-            metadata=json.dumps(metadata) if metadata else None
+            event_data=json.dumps(metadata) if metadata else None
         )
         
         db.add(event)

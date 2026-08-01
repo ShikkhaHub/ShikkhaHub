@@ -106,6 +106,10 @@ def cached(key_prefix: str, expire: int = 3600):
     return decorator
 
 # Cache key generators
+def generate_cache_key(*parts) -> str:
+    """Generate a namespaced cache key from arbitrary parts."""
+    return "shikkhahub:" + ":".join(str(p) for p in parts)
+
 def get_divisions_cache_key() -> str:
     return "shikkhahub:divisions"
 

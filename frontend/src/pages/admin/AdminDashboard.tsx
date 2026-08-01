@@ -10,16 +10,12 @@ import {
   TrendingUp,
   TrendingDown,
   ChevronDown,
-  CheckCircle2,
   Server,
-  Database,
   Activity,
   HardDrive,
-  Bell,
   UserPlus,
   Award,
   MessageSquare,
-  School,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 

@@ -1,6 +1,6 @@
 """Q&A (Question and Answer) API endpoints."""
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
@@ -83,6 +83,7 @@ class QuestionDetailResponse(QuestionResponse):
 @router.post("/questions", response_model=QuestionResponse)
 @standard_limit()
 def create_question(
+    request: Request,
     question: QuestionCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -209,6 +210,7 @@ def delete_question(
 @router.post("/questions/{question_id}/answers", response_model=AnswerResponse)
 @standard_limit()
 def create_answer(
+    request: Request,
     question_id: int,
     answer: AnswerCreate,
     current_user: User = Depends(get_current_active_user),
