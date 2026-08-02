@@ -174,7 +174,7 @@ export const SavedSearchesPanel: React.FC = () => {
         </div>
       )}
 
-      <style jsx>{`
+      <style>{`
         .saved-searches-panel {
           border: 1px solid #e5e7eb;
           border-radius: 8px;

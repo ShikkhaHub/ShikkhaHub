@@ -196,7 +196,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
         )}
       </div>
 
-      <style jsx>{`
+      <style>{`
         .feedback-modal-overlay {
           position: fixed;
           top: 0;
