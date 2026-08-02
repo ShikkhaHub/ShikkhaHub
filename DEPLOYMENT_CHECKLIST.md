@@ -12,7 +12,7 @@
 ```bash
 # Visit https://vercel.com/new
 # Connect GitHub: ShikkhaHub/ShikkhaHub repository
-# Create project "shikkhahub-frontend"
+# Create project "shikkhahub-ss"
 # Root directory: frontend/
 # Accept defaults, click Deploy
 
@@ -42,7 +42,7 @@ Visit: https://github.com/ShikkhaHub/ShikkhaHub/settings/secrets/actions
 |------|-------|-----------|
 | `VERCEL_TOKEN` | Your Vercel access token | https://vercel.com/account/tokens → Create Token → Full Access |
 | `VERCEL_ORG_ID` | Your Vercel Team ID | https://vercel.com/account/settings → Team Settings → Team ID |
-| `VERCEL_PROJECT_ID_FRONTEND` | Frontend project ID | Vercel Dashboard → shikkhahub-frontend → Settings → General → Project ID |
+| `VERCEL_PROJECT_ID_FRONTEND` | Frontend project ID | Vercel Dashboard → shikkhahub-ss → Settings → General → Project ID |
 | `VERCEL_PROJECT_ID_BACKEND` | Backend project ID | Vercel Dashboard → shikkhahub-backend → Settings → General → Project ID |
 
 **Verification:**
@@ -65,7 +65,7 @@ DATABASE_URL=postgresql://user:password@host/dbname
 SECRET_KEY=<random 32 character string>
 # Generate: python -c "import secrets; print(secrets.token_urlsafe(32))"
 
-BACKEND_CORS_ORIGINS=["https://shikkhahub-frontend.vercel.app"]
+BACKEND_CORS_ORIGINS=["https://shikkhahub-ss.vercel.app"]
 
 ENVIRONMENT=production
 
@@ -81,7 +81,7 @@ ELASTICSEARCH_URL=http://elasticsearch:9200
 
 ### 4. Configure Frontend Environment Variables
 
-**In Vercel Dashboard → shikkhahub-frontend → Settings → Environment Variables:**
+**In Vercel Dashboard → shikkhahub-ss → Settings → Environment Variables:**
 
 ```env
 VITE_API_URL=https://shikkhahub-backend.vercel.app/api/v1
@@ -127,7 +127,7 @@ curl -s "https://shikkhahub-backend.vercel.app/api/v1/locations/divisions" | jq
 ```
 
 ### Frontend Verification
-1. Visit: https://shikkhahub-frontend.vercel.app
+1. Visit: https://shikkhahub-ss.vercel.app
 2. Test search functionality
 3. Click on an institution
 4. Verify API calls in browser DevTools Network tab
@@ -154,14 +154,20 @@ curl -H "Authorization: token YOUR_GITHUB_TOKEN" \
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "app/main.py": {
-      "runtime": "python3.12",
+    "api/index.py": {
       "maxDuration": 60,
       "excludeFiles": "{tests/**,scripts/**,**/__pycache__/**,**/*.pyc}"
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index" }
+  ]
 }
 ```
+
+Note: the Python runtime is auto-detected (no `runtime` key — an explicit `runtime`
+value causes "Function Runtimes must have a valid version"). The FastAPI app is
+exposed through the `api/index.py` entrypoint, which imports `app` from `app.main`.
 
 ### Problem: Frontend returns "Cannot GET /institutions/123"
 
@@ -188,7 +194,7 @@ curl -H "Authorization: token YOUR_GITHUB_TOKEN" \
 
 ```bash
 # Backend should allow:
-["https://shikkhahub-frontend.vercel.app"]
+["https://shikkhahub-ss.vercel.app"]
 
 # NOT: ["*"]  # Security risk
 ```

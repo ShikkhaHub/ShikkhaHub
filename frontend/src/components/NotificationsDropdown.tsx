@@ -116,7 +116,7 @@ export const NotificationsDropdown: React.FC = () => {
         </div>
       )}
 
-      <style jsx>{`
+      <style>{`
         .notifications-dropdown {
           position: relative;
         }

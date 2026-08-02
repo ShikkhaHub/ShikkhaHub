@@ -3,7 +3,6 @@
 # Run this from the project root directory with proper credentials
 # Prerequisites:
 #   - Vercel CLI installed: npm install -g vercel@latest
-#   - GitHub CLI configured: gh auth login
 #   - Vercel projects already created (frontend + backend)
 #   - Environment variables configured on each project
 
@@ -28,7 +27,7 @@ if [ -z "$VERCEL_TOKEN" ]; then
 fi
 
 # Check if we're in the project root
-if [ ! -f "package.json" ] || [ ! -d "frontend" ] || [ ! -d "backend" ]; then
+if [ ! -d "frontend" ] || [ ! -d "backend" ]; then
     echo -e "${RED}Error: Not in project root directory${NC}"
     echo "Please run this script from the ShikkhaHub project root"
     exit 1
@@ -38,24 +37,18 @@ echo -e "${GREEN}✓ Prerequisites check passed${NC}\n"
 
 # Deploy Frontend
 echo -e "${YELLOW}Deploying Frontend...${NC}"
-cd frontend
-
+# The frontend project uses rootDirectory: "frontend", so deploy from the repo
+# root; Vercel builds ./frontend in the cloud.
 if [ ! -f ".vercel/project.json" ]; then
     echo -e "${RED}Error: Frontend not linked to Vercel${NC}"
-    echo "Run: cd frontend && vercel link"
+    echo "Run: vercel link --project shikkhahub-ss"
     exit 1
 fi
 
-echo "Building frontend..."
-pnpm build
+echo "Deploying to Vercel (cloud build)..."
+vercel deploy --prod --yes --token=$VERCEL_TOKEN
 
-echo "Deploying to Vercel..."
-vercel deploy --prod --token=$VERCEL_TOKEN
-
-FRONTEND_URL=$(vercel ls --prod --token=$VERCEL_TOKEN 2>/dev/null | head -1 | awk '{print $1}')
-echo -e "${GREEN}✓ Frontend deployed: https://${FRONTEND_URL}${NC}\n"
-
-cd ..
+echo -e "${GREEN}✓ Frontend deployed: https://shikkhahub-ss.vercel.app${NC}\n"
 
 # Deploy Backend
 echo -e "${YELLOW}Deploying Backend...${NC}"
@@ -63,18 +56,14 @@ cd backend
 
 if [ ! -f ".vercel/project.json" ]; then
     echo -e "${RED}Error: Backend not linked to Vercel${NC}"
-    echo "Run: cd backend && vercel link"
+    echo "Run: cd backend && vercel link --project shikkhahub-backend"
     exit 1
 fi
 
-echo "Building backend..."
-# No explicit build needed for FastAPI, Vercel does it automatically
+echo "Deploying to Vercel (cloud build)..."
+vercel deploy --prod --yes --token=$VERCEL_TOKEN
 
-echo "Deploying to Vercel..."
-vercel deploy --prod --token=$VERCEL_TOKEN
-
-BACKEND_URL=$(vercel ls --prod --token=$VERCEL_TOKEN 2>/dev/null | head -1 | awk '{print $1}')
-echo -e "${GREEN}✓ Backend deployed: https://${BACKEND_URL}${NC}\n"
+echo -e "${GREEN}✓ Backend deployed: https://shikkhahub-backend.vercel.app${NC}\n"
 
 cd ..
 
@@ -82,7 +71,7 @@ cd ..
 echo -e "${YELLOW}Verifying deployments...${NC}\n"
 
 echo "Testing frontend..."
-FRONTEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${FRONTEND_URL}")
+FRONTEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://shikkhahub-ss.vercel.app")
 if [ "$FRONTEND_STATUS" = "200" ]; then
     echo -e "${GREEN}✓ Frontend responding (HTTP ${FRONTEND_STATUS})${NC}"
 else
@@ -90,7 +79,7 @@ else
 fi
 
 echo "Testing backend health..."
-BACKEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${BACKEND_URL}/api/v1/health")
+BACKEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://shikkhahub-backend.vercel.app/health")
 if [ "$BACKEND_STATUS" = "200" ]; then
     echo -e "${GREEN}✓ Backend health check passed (HTTP ${BACKEND_STATUS})${NC}"
 else
@@ -98,7 +87,7 @@ else
 fi
 
 echo "Testing search endpoint..."
-SEARCH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${BACKEND_URL}/api/v1/institutions/search?q=dhaka")
+SEARCH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://shikkhahub-backend.vercel.app/api/v1/institutions/search?q=dhaka")
 if [ "$SEARCH_STATUS" = "200" ]; then
     echo -e "${GREEN}✓ Search endpoint working (HTTP ${SEARCH_STATUS})${NC}"
 else
@@ -109,11 +98,10 @@ echo -e "\n${GREEN}================================${NC}"
 echo -e "${GREEN}Deployment Complete!${NC}"
 echo -e "${GREEN}================================${NC}\n"
 
-echo "Frontend URL: https://${FRONTEND_URL}"
-echo "Backend URL: https://${BACKEND_URL}/api/v1"
+echo "Frontend URL: https://shikkhahub-ss.vercel.app"
+echo "Backend URL: https://shikkhahub-backend.vercel.app/api/v1"
 echo ""
 echo "Next steps:"
-echo "1. Update VITE_API_URL on frontend project in Vercel"
-echo "2. Test the live application"
-echo "3. Monitor logs in Vercel dashboard"
-echo "4. Configure monitoring (Sentry, analytics)"
+echo "1. Test the live application"
+echo "2. Monitor logs in Vercel dashboard"
+echo "3. Configure monitoring (Sentry, analytics)"

@@ -47,22 +47,22 @@ export const notificationsAPI = {
     offset = 0,
     filter?: 'unread' | 'archived'
   ): Promise<{ data: Notification[]; total: number }> => {
-    const response = await apiClient.get('/api/v1/notifications', {
+    const response = await apiClient.get<{ data: Notification[]; total: number }>('/api/v1/notifications', {
       params: { limit, offset, filter },
     });
-    return response.data;
+    return response;
   },
 
   // Get notification by ID
   getById: async (id: string): Promise<Notification> => {
-    const response = await apiClient.get(`/api/v1/notifications/${id}`);
-    return response.data;
+    const response = await apiClient.get<Notification>(`/api/v1/notifications/${id}`);
+    return response;
   },
 
   // Mark notification as read
   markAsRead: async (id: string): Promise<Notification> => {
-    const response = await apiClient.patch(`/api/v1/notifications/${id}/read`);
-    return response.data;
+    const response = await apiClient.patch<Notification>(`/api/v1/notifications/${id}/read`);
+    return response;
   },
 
   // Mark all notifications as read
@@ -72,8 +72,8 @@ export const notificationsAPI = {
 
   // Archive notification
   archive: async (id: string): Promise<Notification> => {
-    const response = await apiClient.patch(`/api/v1/notifications/${id}/archive`);
-    return response.data;
+    const response = await apiClient.patch<Notification>(`/api/v1/notifications/${id}/archive`);
+    return response;
   },
 
   // Delete notification
@@ -83,20 +83,20 @@ export const notificationsAPI = {
 
   // Get notification summary
   getSummary: async (): Promise<NotificationSummary> => {
-    const response = await apiClient.get('/api/v1/notifications/summary/unread-count');
-    return response.data;
+    const response = await apiClient.get<NotificationSummary>('/api/v1/notifications/summary/unread-count');
+    return response;
   },
 
   // Get user preferences
   getPreferences: async (): Promise<NotificationPreference> => {
-    const response = await apiClient.get('/api/v1/notifications/preferences');
-    return response.data;
+    const response = await apiClient.get<NotificationPreference>('/api/v1/notifications/preferences');
+    return response;
   },
 
   // Update preferences
   updatePreferences: async (preferences: Partial<NotificationPreference>): Promise<NotificationPreference> => {
-    const response = await apiClient.patch('/api/v1/notifications/preferences', preferences);
-    return response.data;
+    const response = await apiClient.patch<NotificationPreference>('/api/v1/notifications/preferences', preferences);
+    return response;
   },
 
   // Send test notification

@@ -50,8 +50,8 @@ export interface FeedbackCommentCreate {
 export const feedbackAPI = {
   // Create feedback
   create: async (data: FeedbackCreate): Promise<Feedback> => {
-    const response = await apiClient.post('/api/v1/feedback', data);
-    return response.data;
+    const response = await apiClient.post<Feedback>('/api/v1/feedback', data);
+    return response;
   },
 
   // Get all feedback with filters
@@ -61,22 +61,22 @@ export const feedbackAPI = {
     limit = 20,
     offset = 0
   ): Promise<{ data: Feedback[]; total: number }> => {
-    const response = await apiClient.get('/api/v1/feedback', {
+    const response = await apiClient.get<{ data: Feedback[]; total: number }>('/api/v1/feedback', {
       params: { type, status, limit, offset },
     });
-    return response.data;
+    return response;
   },
 
   // Get specific feedback
   getById: async (id: string): Promise<Feedback> => {
-    const response = await apiClient.get(`/api/v1/feedback/${id}`);
-    return response.data;
+    const response = await apiClient.get<Feedback>(`/api/v1/feedback/${id}`);
+    return response;
   },
 
   // Add comment to feedback
   addComment: async (feedbackId: string, data: FeedbackCommentCreate): Promise<FeedbackComment> => {
-    const response = await apiClient.post(`/api/v1/feedback/${feedbackId}/comments`, data);
-    return response.data;
+    const response = await apiClient.post<FeedbackComment>(`/api/v1/feedback/${feedbackId}/comments`, data);
+    return response;
   },
 
   // Get comments for feedback
@@ -85,22 +85,23 @@ export const feedbackAPI = {
     limit = 20,
     offset = 0
   ): Promise<{ data: FeedbackComment[]; total: number }> => {
-    const response = await apiClient.get(`/api/v1/feedback/${feedbackId}/comments`, {
-      params: { limit, offset },
-    });
-    return response.data;
+    const response = await apiClient.get<{ data: FeedbackComment[]; total: number }>(
+      `/api/v1/feedback/${feedbackId}/comments`,
+      { params: { limit, offset } }
+    );
+    return response;
   },
 
   // Upvote feedback
   upvote: async (id: string): Promise<Feedback> => {
-    const response = await apiClient.post(`/api/v1/feedback/${id}/upvote`);
-    return response.data;
+    const response = await apiClient.post<Feedback>(`/api/v1/feedback/${id}/upvote`);
+    return response;
   },
 
   // Change feedback status (admin)
   updateStatus: async (id: string, status: FeedbackStatus): Promise<Feedback> => {
-    const response = await apiClient.patch(`/api/v1/feedback/${id}/status`, { status });
-    return response.data;
+    const response = await apiClient.patch<Feedback>(`/api/v1/feedback/${id}/status`, { status });
+    return response;
   },
 
   // Get analytics summary
@@ -110,14 +111,19 @@ export const feedbackAPI = {
     by_status: Record<FeedbackStatus, number>;
     avg_rating: number;
   }> => {
-    const response = await apiClient.get('/api/v1/analytics/summary');
-    return response.data;
+    const response = await apiClient.get<{
+      total_feedback: number;
+      by_type: Record<FeedbackType, number>;
+      by_status: Record<FeedbackStatus, number>;
+      avg_rating: number;
+    }>('/api/v1/analytics/summary');
+    return response;
   },
 
   // Get feedback templates
   getTemplates: async (): Promise<any[]> => {
-    const response = await apiClient.get('/api/v1/templates/all');
-    return response.data;
+    const response = await apiClient.get<any[]>('/api/v1/templates/all');
+    return response;
   },
 };
 

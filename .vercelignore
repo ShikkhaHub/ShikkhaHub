@@ -1,0 +1,13 @@
+backend/
+ckan/
+data/
+data-pipeline/
+docs/
+frontend/node_modules/
+frontend/.vercel/
+growth/
+mobile/
+monitoring/
+nginx/
+scripts/
+*.md

@@ -27,17 +27,32 @@ interface RequestOptions {
   body?: unknown;
   headers?: Record<string, string>;
   requireAuth?: boolean;
+  params?: Record<string, unknown>;
 }
 
 // Main API client function
-async function apiClient<T>(
+async function request<T>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { method = 'GET', body, headers = {}, requireAuth = true } = options;
+  const { method = 'GET', body, headers = {}, requireAuth = true, params } = options;
 
   // Build URL
-  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
+  let url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
+
+  // Append query parameters
+  if (params) {
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null && value !== '') {
+        search.append(key, String(value));
+      }
+    }
+    const qs = search.toString();
+    if (qs) {
+      url += (url.includes('?') ? '&' : '?') + qs;
+    }
+  }
 
   // Build headers
   const requestHeaders: Record<string, string> = {
@@ -118,19 +133,37 @@ async function apiClient<T>(
 // Convenience methods
 export const api = {
   get: <T>(endpoint: string, requireAuth = true): Promise<T> =>
-    apiClient<T>(endpoint, { method: 'GET', requireAuth }),
+    request<T>(endpoint, { method: 'GET', requireAuth }),
 
   post: <T>(endpoint: string, body: unknown, requireAuth = true): Promise<T> =>
-    apiClient<T>(endpoint, { method: 'POST', body, requireAuth }),
+    request<T>(endpoint, { method: 'POST', body, requireAuth }),
 
   put: <T>(endpoint: string, body: unknown, requireAuth = true): Promise<T> =>
-    apiClient<T>(endpoint, { method: 'PUT', body, requireAuth }),
+    request<T>(endpoint, { method: 'PUT', body, requireAuth }),
 
   patch: <T>(endpoint: string, body: unknown, requireAuth = true): Promise<T> =>
-    apiClient<T>(endpoint, { method: 'PATCH', body, requireAuth }),
+    request<T>(endpoint, { method: 'PATCH', body, requireAuth }),
 
   delete: <T>(endpoint: string, requireAuth = true): Promise<T> =>
-    apiClient<T>(endpoint, { method: 'DELETE', requireAuth }),
+    request<T>(endpoint, { method: 'DELETE', requireAuth }),
+};
+
+// Chained API client (options-based) used by feature modules
+export const apiClient = {
+  get: <T>(endpoint: string, options: { params?: Record<string, unknown> } = {}): Promise<T> =>
+    request<T>(endpoint, { method: 'GET', requireAuth: true, params: options.params }),
+
+  post: <T>(endpoint: string, body?: unknown): Promise<T> =>
+    request<T>(endpoint, { method: 'POST', body, requireAuth: true }),
+
+  put: <T>(endpoint: string, body?: unknown): Promise<T> =>
+    request<T>(endpoint, { method: 'PUT', body, requireAuth: true }),
+
+  patch: <T>(endpoint: string, body?: unknown): Promise<T> =>
+    request<T>(endpoint, { method: 'PATCH', body, requireAuth: true }),
+
+  delete: <T>(endpoint: string): Promise<T> =>
+    request<T>(endpoint, { method: 'DELETE', requireAuth: true }),
 };
 
 // Auth token utilities
