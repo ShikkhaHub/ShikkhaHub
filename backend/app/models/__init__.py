@@ -41,6 +41,29 @@ from app.models.institution_detail import (
 )
 from app.models.announcement import Admission, Notice, Scholarship
 from app.models.education_graph import InstitutionCourse, SavedInstitution
+from app.models.data_verification import (
+    RawSource,
+    ScrapeJob,
+    ScrapedRecord,
+    VerificationQueue,
+    ChangeRequest,
+    InstitutionHistory,
+)
+from app.models.rbac import (
+    Role,
+    Permission,
+    RolePermission,
+    AdminProfile,
+    AuditLog,
+)
+from app.models.community import (
+    Community,
+    Tag,
+    DiscussionPost,
+    PostVote,
+    PostTag,
+    CommunityMember,
+)
 
 __all__ = [
     "Division",
@@ -90,4 +113,21 @@ __all__ = [
     "Scholarship",
     "InstitutionCourse",
     "SavedInstitution",
+    "RawSource",
+    "ScrapeJob",
+    "ScrapedRecord",
+    "VerificationQueue",
+    "ChangeRequest",
+    "InstitutionHistory",
+    "Role",
+    "Permission",
+    "RolePermission",
+    "AdminProfile",
+    "AuditLog",
+    "Community",
+    "Tag",
+    "DiscussionPost",
+    "PostVote",
+    "PostTag",
+    "CommunityMember",
 ]

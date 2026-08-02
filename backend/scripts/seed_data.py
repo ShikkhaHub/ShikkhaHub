@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from app.core.database import SessionLocal, init_db
 from app.models import (
     Division, District, Upazila,
-    InstitutionType, EducationBoard, UniversityGrantCommission
+    InstitutionType, EducationBoard, UniversityGrantCommission,
+    FacilityType, RawSource
 )
 
 # Bangladesh Divisions (8)
@@ -87,6 +88,30 @@ UGC_AUTHORITIES = [
     {"name_en": "Institution of Engineers Bangladesh", "name_bn": "ইঞ্জিনিয়ার্স ইনস্টিটিউশন বাংলাদেশ", "short_code": "ieb", "commission_type": "engineering"},
 ]
 
+# Facility Types
+FACILITY_TYPES = [
+    {"name": "Hostel", "name_bn": "হোস্টেল", "icon": "🏠", "display_order": 1},
+    {"name": "Library", "name_bn": "লাইব্রেরি", "icon": "📚", "display_order": 2},
+    {"name": "WiFi", "name_bn": "ওয়াইফাই", "icon": "📶", "display_order": 3},
+    {"name": "Transport", "name_bn": "পরিবহন", "icon": "🚌", "display_order": 4},
+    {"name": "Cafeteria", "name_bn": "ক্যান্টিন", "icon": "🍽️", "display_order": 5},
+    {"name": "Medical", "name_bn": "মেডিকেল", "icon": "🏥", "display_order": 6},
+    {"name": "Playground", "name_bn": "খেলার মাঠ", "icon": "⚽", "display_order": 7},
+    {"name": "Laboratory", "name_bn": "ল্যাবরেটরি", "icon": "🔬", "display_order": 8},
+    {"name": "Auditorium", "name_bn": "অডিটোরিয়াম", "icon": "🎭", "display_order": 9},
+    {"name": "Prayer Hall", "name_bn": "জামে মসজিদ", "icon": "🕌", "display_order": 10},
+]
+
+# Raw Data Sources
+RAW_SOURCES = [
+    {"name": "UGC", "name_bn": "ইউজিসি", "source_type": "government", "reliability_score": 0.95},
+    {"name": "BMED", "name_bn": "মাদ্রাসা শিক্ষা বোর্ড", "source_type": "government", "reliability_score": 0.9},
+    {"name": "Education Ministry", "name_bn": "শিক্ষা মন্ত্রণালয়", "source_type": "government", "reliability_score": 0.9},
+    {"name": "Education Boards", "name_bn": "শিক্ষা বোর্ডসমূহ", "source_type": "government", "reliability_score": 0.9},
+    {"name": "BTEB", "name_bn": "কারিগরি শিক্ষা বোর্ড", "source_type": "government", "reliability_score": 0.9},
+    {"name": "Manual Entry", "name_bn": "ম্যানুয়াল এন্ট্রি", "source_type": "manual", "reliability_score": 0.5},
+]
+
 
 def seed_divisions(db: Session) -> None:
     """Seed Bangladesh divisions."""
@@ -156,6 +181,28 @@ def seed_ugc_authorities(db: Session) -> None:
     print(f"  ✓ Seeded {len(UGC_AUTHORITIES)} authorities")
 
 
+def seed_facility_types(db: Session) -> None:
+    """Seed facility types."""
+    print("Seeding facility types...")
+    for fac_data in FACILITY_TYPES:
+        existing = db.query(FacilityType).filter(FacilityType.name == fac_data["name"]).first()
+        if not existing:
+            db.add(FacilityType(**fac_data))
+    db.commit()
+    print(f"  ✓ Seeded {len(FACILITY_TYPES)} facility types")
+
+
+def seed_raw_sources(db: Session) -> None:
+    """Seed authoritative raw data sources."""
+    print("Seeding raw data sources...")
+    for src_data in RAW_SOURCES:
+        existing = db.query(RawSource).filter(RawSource.name == src_data["name"]).first()
+        if not existing:
+            db.add(RawSource(**src_data))
+    db.commit()
+    print(f"  ✓ Seeded {len(RAW_SOURCES)} raw sources")
+
+
 def main():
     print("=" * 50)
     print("ShikkhaHub Database Seeder")
@@ -172,6 +219,8 @@ def main():
         seed_institution_types(db)
         seed_education_boards(db)
         seed_ugc_authorities(db)
+        seed_facility_types(db)
+        seed_raw_sources(db)
         
         print("\n" + "=" * 50)
         print("✓ Seeding completed successfully!")
