@@ -10,11 +10,13 @@ import {
   Users, 
   Sparkles,
   Crown,
+  BarChart3,
   X
 } from 'lucide-react'
 
 const menuItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/', active: true },
+  { icon: BarChart3, label: 'My Analytics', path: '/student', active: false },
   { icon: Building2, label: 'Institutions', path: '/institutions', active: false },
   { icon: BookOpen, label: 'Courses', path: '#', active: false },
   { icon: FileText, label: 'Admission Guide', path: '#', active: false },

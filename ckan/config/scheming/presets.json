@@ -1,0 +1,157 @@
+{
+  "presets": [
+    {
+      "preset_name": "title",
+      "values": {
+        "validators": "if_empty_same_as(name) unicode_safe",
+        "form_snippet": "text.html",
+        "form_attrs": {
+          "data-module": "slug-preview-target"
+        }
+      }
+    },
+    {
+      "preset_name": "slug",
+      "values": {
+        "validators": "not_empty unicode_safe name_validator",
+        "form_snippet": "slug.html",
+        "form_attrs": {
+          "data-module": "slug-preview-slug"
+        }
+      }
+    },
+    {
+      "preset_name": "resource_url",
+      "values": {
+        "validators": "not_empty unicode_safe remove_whitespace url_validator",
+        "form_snippet": "upload.html",
+        "form_placeholder": "http://example.com/data.csv",
+        "form_attrs": {
+          "data-module": "resource-upload-field"
+        }
+      }
+    },
+    {
+      "preset_name": "resource_format",
+      "values": {
+        "validators": "not_empty unicode_safe",
+        "form_snippet": "resource_format.html",
+        "form_placeholder": "CSV, JSON, XLSX, PDF, GeoJSON"
+      }
+    },
+    {
+      "preset_name": "select",
+      "values": {
+        "validators": "scheming_required scheming_choices",
+        "form_snippet": "select.html"
+      }
+    },
+    {
+      "preset_name": "multiple_select",
+      "values": {
+        "validators": "scheming_multiple_choice",
+        "form_snippet": "multiple_select.html",
+        "output_validators": "scheming_multiple_choice_output"
+      }
+    },
+    {
+      "preset_name": "date",
+      "values": {
+        "validators": "scheming_required scheming_iso_datetime",
+        "form_snippet": "date.html",
+        "display_snippet": "date.html"
+      }
+    },
+    {
+      "preset_name": "datetime",
+      "values": {
+        "validators": "scheming_required scheming_datetime",
+        "form_snippet": "datetime.html",
+        "display_snippet": "datetime.html"
+      }
+    },
+    {
+      "preset_name": "tags",
+      "values": {
+        "validators": "ignore_missing_validator tag_string_convert",
+        "form_snippet": "tag_string_autocomplete.html",
+        "display_snippet": "tags.html"
+      }
+    },
+    {
+      "preset_name": "text",
+      "values": {
+        "validators": "ignore_missing_validator unicode_safe",
+        "form_snippet": "text.html",
+        "form_attrs": {}
+      }
+    },
+    {
+      "preset_name": "text_area",
+      "values": {
+        "validators": "ignore_missing_validator unicode_safe",
+        "form_snippet": "textarea.html",
+        "form_attrs": {
+          "rows": 5
+        }
+      }
+    },
+    {
+      "preset_name": "markdown",
+      "values": {
+        "validators": "ignore_missing_validator unicode_safe",
+        "form_snippet": "markdown.html"
+      }
+    },
+    {
+      "preset_name": "url",
+      "values": {
+        "validators": "ignore_missing_validator unicode_safe remove_whitespace url_validator",
+        "form_snippet": "text.html"
+      }
+    },
+    {
+      "preset_name": "number",
+      "values": {
+        "validators": "ignore_missing_validator scheming_number",
+        "form_snippet": "text.html"
+      }
+    },
+    {
+      "preset_name": "checkbox",
+      "values": {
+        "validators": "scheming_required scheming_boolean",
+        "form_snippet": "checkbox.html",
+        "display_snippet": "checkbox.html"
+      }
+    },
+    {
+      "preset_name": "license_id",
+      "values": {
+        "validators": "ignore_missing_validator unicode_safe",
+        "form_snippet": "license_id.html"
+      }
+    },
+    {
+      "preset_name": "organization",
+      "values": {
+        "validators": "ignore_missing_validator unicode_safe",
+        "form_snippet": "organization.html"
+      }
+    },
+    {
+      "preset_name": "dataset_organization",
+      "values": {
+        "form_snippet": "organization.html"
+      }
+    },
+    {
+      "preset_name": "resource_upload",
+      "values": {
+        "validators": "ignore_missing_validator unicode_safe remove_whitespace",
+        "form_snippet": "upload.html",
+        "form_placeholder": ""
+      }
+    }
+  ]
+}

@@ -1,0 +1,156 @@
+# ShikkhaHub CKAN Data Catalog — Docker Compose
+#
+# Deploys CKAN as the trusted education data catalog for Bangladesh:
+# dataset catalog, metadata governance, version history, APIs and open data
+# publication. Backed by PostgreSQL + Solr (search) + Redis (cache), with the
+# recommended extensions (DataStore, DataPusher, DCAT, Harvest, Scheming,
+# Spatial, XLoader).
+#
+#   docker compose -f ckan/docker-compose.yml up -d
+#
+# After boot: http://localhost:5000  (admin created via init script)
+
+version: "3.8"
+
+services:
+  # ------------------------------------------------------------------ CKAN
+  ckan:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CKAN_VERSION: ${CKAN_VERSION:-2.10.5}
+    image: shikkhahub/ckan:${CKAN_VERSION:-2.10.5}
+    container_name: shikkhahub-ckan
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment: &ckan_env
+      # Core config
+      CKAN_INI: /srv/app/ckan.ini
+      CKAN_SITE_URL: ${CKAN_SITE_URL:-http://localhost:5000}
+      CKAN_SITE_ID: ${CKAN_SITE_ID:-shikkhahub}
+      CKAN_PLUGINS: |
+        envvars image_view text_view recline_view scheming_datasets
+        scheming_groups datastore datapusher resource_proxy
+        dcat dcat_rdf_harvester dcat_json_harvester harvest
+        spatial_metadata spatial_query spatial_harvest_metadata_api
+        xloader
+      CKAN__VIEWS__DEFAULT_VIEWS: |
+        image_view text_view recline_view resource_proxy
+      # Database
+      CKAN_DB_USER: ${CKAN_DB_USER:-ckan_default}
+      CKAN_DB_PASSWORD: ${CKAN_DB_PASSWORD:-ckan_default}
+      CKAN_DB_DATABASE: ${CKAN_DB_DATABASE:-ckan_default}
+      CKAN__DATABASE__URL: postgresql://${CKAN_DB_USER:-ckan_default}:${CKAN_DB_PASSWORD:-ckan_default}@ckan-db:5432/${CKAN_DB_DATABASE:-ckan_default}
+      # Datastore
+      CKAN_DATASTORE_WRITE_URL: postgresql://${CKAN_DB_USER:-ckan_default}:${CKAN_DB_PASSWORD:-ckan_default}@ckan-db:5432/datastore_default
+      CKAN_DATASTORE_READ_URL: postgresql://datastore_ro:${CKAN_DATASTORE_RO_PASSWORD:-ckan_datastore_ro}@ckan-db:5432/datastore_default
+      # Solr
+      CKAN__SOLR__URL: http://ckan-solr:8983/solr/ckan
+      # Redis
+      CKAN__REDIS__URL: redis://ckan-redis:6379/1
+      # Storage
+      CKAN_STORAGE_PATH: /var/lib/ckan
+      CKAN_MAX_UPLOAD_SIZE_MB: ${CKAN_MAX_UPLOAD_SIZE_MB:-10}
+      # Auth / seed admin (bootstrap admin via paster)
+      CKAN_SYSADMIN_NAME: ${CKAN_SYSADMIN_NAME:-ckan_admin}
+      CKAN_SYSADMIN_EMAIL: ${CKAN_SYSADMIN_EMAIL:-admin@shikkhahub.com}
+      CKAN_SYSADMIN_PASSWORD: ${CKAN_SYSADMIN_PASSWORD:-changeme123}
+      # API key for internal services
+      CKAN_API_TOKEN: ${CKAN_API_TOKEN:-changeme_ckan_api_token}
+      # Datapusher / XLoader
+      CKAN__DATAPUSHER__URL: http://ckan-datapusher:8800
+      CKAN__XLOADER__REDIS_URL: redis://ckan-redis:6379/2
+      # Harvest
+      CKAN__HARVEST__MQ__TYPE: redis
+      CKAN__HARVEST__MQ__REDIS_URL: redis://ckan-redis:6379/3
+      # Scheming
+      CKAN__SCHEMING__DATASET_SCHEMAS: /srv/app/scheming/dataset.yaml
+      CKAN__SCHEMING__PRESETS: /srv/app/scheming/presets.json
+      CKAN__SCHEMING__GROUP_SCHEMAS: /srv/app/scheming/group.yaml
+      # DCAT
+      CKAN__DCAT__EXPOSE_SUBCATALOGS: true
+      # Locale
+      CKAN__LOCALES_OFFERED: en bn
+      CKAN__LOCALE_DEFAULT: en
+      CKAN__LOCALES_OFFERED_EN: "['en', 'bn']"
+      # Email (configure in production)
+      SMTP_SERVER: ${SMTP_SERVER:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_MAIL_FROM: ${SMTP_MAIL_FROM:-ckan@shikkhahub.com}
+    volumes:
+      - ./config/ckan.ini:/srv/app/ckan.ini:ro
+      - ./config/scheming:/srv/app/scheming:ro
+      - ./config/seed_catalog.json:/srv/app/config/seed_catalog.json:ro
+      - ./storage:/var/lib/ckan
+      - ./scripts:/srv/app/scripts
+    depends_on:
+      ckan-db:
+        condition: service_healthy
+      ckan-solr:
+        condition: service_started
+      ckan-redis:
+        condition: service_healthy
+      ckan-datapusher:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/3/action/status_show"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  # ------------------------------------------------------ Database (Postgres)
+  ckan-db:
+    image: postgres:14-alpine
+    container_name: shikkhahub-ckan-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${CKAN_DB_USER:-ckan_default}
+      POSTGRES_PASSWORD: ${CKAN_DB_PASSWORD:-ckan_default}
+      POSTGRES_DB: ${CKAN_DB_DATABASE:-ckan_default}
+    volumes:
+      - ckan_db_data:/var/lib/postgresql/data
+      - ./config/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CKAN_DB_USER:-ckan_default}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ------------------------------------------------------------ Solr (search)
+  ckan-solr:
+    image: ckan/ckan-solr:2.10-solr9
+    container_name: shikkhahub-ckan-solr
+    restart: unless-stopped
+    volumes:
+      - ckan_solr_data:/var/solr
+
+  # ------------------------------------------------------------- Redis (cache)
+  ckan-redis:
+    image: redis:7-alpine
+    container_name: shikkhahub-ckan-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ------------------------------------- DataPusher (CSV/XLSX -> DataStore)
+  ckan-datapusher:
+    image: ckan/ckan-datapusher:0.0.22
+    container_name: shikkhahub-ckan-datapusher
+    restart: unless-stopped
+    environment:
+      DATAPUSHER_MAX_CONTENT_LENGTH: 100000000
+
+volumes:
+  ckan_db_data:
+  ckan_solr_data:
+
+networks:
+  default:
+    name: shikkhahub-ckan-network

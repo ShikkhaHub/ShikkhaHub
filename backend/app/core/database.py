@@ -29,6 +29,37 @@ def get_db() -> Session:
     finally:
         db.close()
 
+
+# Recommended PostgreSQL extensions for the education knowledge graph.
+# PostGIS = geospatial queries, pg_trgm = fuzzy search, unaccent = Bangla/Latin
+# normalization, uuid-ossp = UUID generation.
+POSTGRES_EXTENSIONS = ("postgis", "pg_trgm", "uuid-ossp", "unaccent")
+
+
+def enable_postgres_extensions() -> None:
+    """Enable required PostgreSQL extensions (best-effort, Postgres only).
+
+    PostGIS can require superuser privileges on some managed providers, so each
+    extension is created independently and failures are logged rather than
+    aborting startup.
+    """
+    if not settings.DATABASE_URL.startswith("postgres"):
+        return
+
+    from sqlalchemy import text
+    import logging
+
+    logger = logging.getLogger(__name__)
+    with engine.begin() as conn:
+        for ext in POSTGRES_EXTENSIONS:
+            try:
+                conn.execute(text(f"CREATE EXTENSION IF NOT EXISTS \"{ext}\""))
+                logger.info(f"Enabled PostgreSQL extension: {ext}")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"Could not enable PostgreSQL extension {ext}: {exc}")
+
+
 def init_db() -> None:
     """Initialize database tables."""
+    enable_postgres_extensions()
     Base.metadata.create_all(bind=engine)

@@ -1,0 +1,223 @@
+# ShikkhaHub CKAN Dataset Schema (Scheming)
+# =========================================
+# Implements the national education metadata standard for Bangladesh.
+# Every dataset carries the metadata-standard fields, then category-specific
+# fields. Datasets are grouped via CKAN groups and attributed to CKAN
+# organizations (Ministry of Education, UGC, boards, universities, ...).
+
+scheming_version: 2
+about: ShikkhaHub Bangladesh education dataset metadata schema
+about_url: https://shikkhahub.com/docs
+
+dataset_type: dataset
+
+# ----------------------------------------------------------------------
+# Category enum — mirrors the 8 CKAN Dataset Categories in the plan.
+# ----------------------------------------------------------------------
+dataset_category_choices:
+  - { value: institutions, label: "Institutions" }
+  - { value: admission, label: "Admission" }
+  - { value: academic_programs, label: "Academic Programs" }
+  - { value: results, label: "Results" }
+  - { value: rankings, label: "Rankings" }
+  - { value: scholarships, label: "Scholarships" }
+  - { value: job_career, label: "Job & Career" }
+  - { value: geographic, label: "Geographic Data" }
+
+# ----------------------------------------------------------------------
+# Metadata standard — required fields for EVERY dataset.
+# ----------------------------------------------------------------------
+dataset_fields:
+  - field_name: title
+    label: Title
+    preset: title
+
+  - field_name: name
+    label: URL
+    preset: slug
+
+  - field_name: dataset_category
+    label: Dataset Category
+    preset: select
+    choices: dataset_category_choices
+    required: true
+    help_text: One of the eight national education dataset categories.
+
+  - field_name: description
+    label: Description
+    form_snippet: markdown.html
+    display_snippet: markdown.html
+    required: true
+
+  - field_name: language
+    label: Language
+    preset: multiple_select
+    choices:
+      - { value: en, label: "English" }
+      - { value: bn, label: "Bangla" }
+      - { value: bilingual, label: "Bilingual (EN + BN)" }
+    required: true
+    default: ["en"]
+
+  - field_name: owner_org
+    label: Organization
+    preset: dataset_organization
+
+  - field_name: organization_name
+    label: Owner
+    preset: text
+    help_text: Publishing organization (e.g. UGC, Dhaka Education Board)
+
+  - field_name: contact_email
+    label: Contact Email
+    preset: url
+
+  - field_name: license_id
+    label: License
+    preset: license_id
+    default: cc-by
+
+  - field_name: source_url
+    label: Source URL
+    preset: url
+
+  - field_name: source_type
+    label: Source Type
+    preset: select
+    required: true
+    choices:
+      - { value: government, label: "Government" }
+      - { value: university_website, label: "University Website" }
+      - { value: education_board, label: "Education Board" }
+      - { value: manual, label: "Manual Verification" }
+      - { value: user_contribution, label: "User Contribution" }
+      - { value: ngo, label: "NGO" }
+
+  - field_name: verification_status
+    label: Verification Status
+    preset: select
+    required: true
+    choices:
+      - { value: collected, label: "Collected" }
+      - { value: pending_review, label: "Pending Review" }
+      - { value: verified, label: "Verified" }
+      - { value: published, label: "Published" }
+      - { value: archived, label: "Archived" }
+    default: pending_review
+
+  - field_name: quality_score
+    label: Quality Score
+    preset: number
+    help_text: 0 - 100 data quality score
+
+  - field_name: update_frequency
+    label: Update Frequency
+    preset: select
+    choices:
+      - { value: realtime, label: "Real-time" }
+      - { value: daily, label: "Daily" }
+      - { value: weekly, label: "Weekly" }
+      - { value: monthly, label: "Monthly" }
+      - { value: yearly, label: "Yearly" }
+      - { value: on_change, label: "On change" }
+    default: monthly
+
+  - field_name: coverage
+    label: Coverage
+    preset: select
+    choices:
+      - { value: national, label: "National" }
+      - { value: division, label: "Division" }
+      - { value: district, label: "District" }
+      - { value: upazila, label: "Upazila" }
+    default: national
+
+  - field_name: tags
+    label: Tags
+    preset: tags
+
+  - field_name: version
+    label: Version
+    preset: text
+    help_text: Semantic version, e.g. 1.2.0
+
+  - field_name: source_updated_at
+    label: Source Last Updated
+    preset: datetime
+
+  - field_name: notes
+    label: Notes
+    preset: markdown
+
+  - field_name: url
+    label: Source Link
+    preset: url
+
+  - field_name: author
+    label: Author
+    preset: text
+
+  - field_name: author_email
+    label: Author Email
+    preset: url
+
+  - field_name: maintainer
+    label: Maintainer
+    preset: text
+
+  - field_name: maintainer_email
+    label: Maintainer Email
+    preset: url
+
+# ----------------------------------------------------------------------
+# Category-specific fields.
+# ----------------------------------------------------------------------
+resource_fields:
+  - field_name: url
+    label: URL
+    preset: resource_url
+
+  - field_name: format
+    label: Format
+    preset: resource_format
+
+  - field_name: name
+    label: Resource Name
+    form_placeholder: e.g. "Universities 2026.csv"
+
+  - field_name: description
+    label: Description
+    form_snippet: markdown.html
+    display_snippet: markdown.html
+
+  - field_name: resource_type
+    label: Resource Type
+    preset: select
+    choices:
+      - { value: primary, label: "Primary Source" }
+      - { value: derived, label: "Derived" }
+      - { value: supporting, label: "Supporting" }
+      - { value: documentation, label: "Documentation" }
+      - { value: api, label: "API" }
+    default: primary
+
+  - field_name: temporal_start
+    label: Temporal Start
+    preset: datetime
+
+  - field_name: temporal_end
+    label: Temporal End
+    preset: datetime
+
+  - field_name: spatial
+    label: Spatial Coverage
+    preset: text_area
+    help_text: GeoJSON geometry or WKT (e.g. bounding box of Bangladesh)
+
+  - field_name: checksum
+    label: Checksum (SHA-256)
+    preset: text
+
+  - field_name: byte_size
+    label: Byte Size
+    preset: number
