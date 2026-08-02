@@ -14,6 +14,7 @@ from app.api.v1.endpoints import (
     student_analytics,
     education,
     ckan,
+    recommendations_ml,
 )
 
 api_router = APIRouter()
@@ -47,3 +48,8 @@ api_router.include_router(sitemap.router, prefix="", tags=["seo"])
 
 # CKAN data catalog (trusted metadata layer)
 api_router.include_router(ckan.router, prefix="/catalog", tags=["data-catalog"])
+
+# ML recommendations (personalized / trending / similar)
+api_router.include_router(
+    recommendations_ml.router, prefix="", tags=["ml-recommendations"]
+)
