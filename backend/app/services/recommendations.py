@@ -305,7 +305,7 @@ class CourseRecommender:
         recommendations = []
         for course in courses:
             course_text = " ".join(
-                filter(None, [course.name, course.description])
+                filter(None, [course.name_en, course.description])
             ).lower()
             score = 0.0
             reasons = []
@@ -319,9 +319,11 @@ class CourseRecommender:
                 recommendations.append(
                     {
                         "course_id": course.id,
-                        "name": course.name,
-                        "degree_awarded": course.degree_awarded,
-                        "duration": course.duration,
+                        "name": course.name_en,
+                        "degree_awarded": (
+                            course.course_type.name if course.course_type else None
+                        ),
+                        "duration": course.duration_years,
                         "institution_id": course.institution_id,
                         "institution_name": inst.name_en if inst else None,
                         "score": round(score, 1),
