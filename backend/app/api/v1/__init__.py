@@ -15,6 +15,7 @@ from app.api.v1.endpoints import (
     education,
     ckan,
     recommendations_ml,
+    nlqp,
 )
 
 api_router = APIRouter()
@@ -53,3 +54,6 @@ api_router.include_router(ckan.router, prefix="/catalog", tags=["data-catalog"])
 api_router.include_router(
     recommendations_ml.router, prefix="", tags=["ml-recommendations"]
 )
+
+# Natural language query processing
+api_router.include_router(nlqp.router, prefix="/search", tags=["search"])
