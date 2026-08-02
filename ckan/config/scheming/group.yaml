@@ -1,0 +1,53 @@
+# ShikkhaHub CKAN Group Schema (Scheming)
+# ========================================
+# Groups map to the national education catalog categories from the plan:
+# Higher Education, School, College, Technical, Medical, Engineering,
+# Scholarships, Research, Jobs, Admission, Results.
+
+scheming_version: 2
+group_type: group
+about: ShikkhaHub education data group schema
+about_url: https://shikkhahub.com/docs
+
+fields:
+  - field_name: title
+    label: Title
+    preset: title
+
+  - field_name: name
+    label: URL
+    preset: slug
+
+  - field_name: description
+    label: Description
+    form_snippet: markdown.html
+    display_snippet: markdown.html
+
+  - field_name: group_category
+    label: Group Category
+    preset: select
+    choices:
+      - { value: higher_education, label: "Higher Education" }
+      - { value: school, label: "School" }
+      - { value: college, label: "College" }
+      - { value: technical, label: "Technical" }
+      - { value: medical, label: "Medical" }
+      - { value: engineering, label: "Engineering" }
+      - { value: scholarships, label: "Scholarships" }
+      - { value: research, label: "Research" }
+      - { value: jobs, label: "Jobs" }
+      - { value: admission, label: "Admission" }
+      - { value: results, label: "Results" }
+
+  - field_name: image_url
+    label: Image URL
+    preset: url
+
+  - field_name: visibility
+    label: Visibility
+    preset: select
+    choices:
+      - { value: public, label: "Public" }
+      - { value: members_only, label: "Members Only" }
+      - { value: private, label: "Private" }
+    default: public

@@ -6,6 +6,14 @@ from app.schemas.institution import (
     InstitutionDetailResponse,
     InstitutionListResponse
 )
+from app.schemas.ckan import (
+    CKANResource,
+    CKANDatasetCreate,
+    CKANDatasetUpdate,
+    CKANDatasetSearchResult,
+    CKANSearchResponse,
+    CKANStatusResponse,
+)
 
 __all__ = [
     "DivisionResponse",
@@ -16,4 +24,10 @@ __all__ = [
     "InstitutionResponse",
     "InstitutionDetailResponse",
     "InstitutionListResponse",
+    "CKANResource",
+    "CKANDatasetCreate",
+    "CKANDatasetUpdate",
+    "CKANDatasetSearchResult",
+    "CKANSearchResponse",
+    "CKANStatusResponse",
 ]

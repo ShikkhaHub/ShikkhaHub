@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     ELASTICSEARCH_HOST: str = "localhost"
     ELASTICSEARCH_PORT: int = 9200
     ELASTICSEARCH_ENABLED: bool = True
+
+    # CKAN Data Catalog
+    CKAN_URL: str = "http://localhost:5000"
+    CKAN_API_URL: str = "http://localhost:5000/api/3/action"
+    CKAN_API_TOKEN: Optional[str] = None
+    CKAN_ENABLED: bool = False
+    CKAN_ORG: str = "shikkhahub"
+    CKAN_TIMEOUT_SECONDS: int = 30
     
     # Security
     SECRET_KEY: str = "your-secret-key-here-change-in-production"

@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     analytics,
     student_analytics,
     education,
+    ckan,
 )
 
 api_router = APIRouter()
@@ -43,3 +44,6 @@ api_router.include_router(education.router, prefix="", tags=["education-graph"])
 
 # SEO features
 api_router.include_router(sitemap.router, prefix="", tags=["seo"])
+
+# CKAN data catalog (trusted metadata layer)
+api_router.include_router(ckan.router, prefix="/catalog", tags=["data-catalog"])

@@ -1,0 +1,34 @@
+{
+  "organizations": [
+    { "name": "ministry-of-education", "title": "Ministry of Education", "description": "Government of Bangladesh — Ministry of Education (শিক্ষা মন্ত্রণালয়).", "image_url": "" },
+    { "name": "ugc", "title": "University Grants Commission", "description": "University Grants Commission of Bangladesh (বাংলাদেশ বিশ্ববিদ্যালয় মঞ্জুরী কমিশন).", "image_url": "" },
+    { "name": "banbeis", "title": "BANBEIS", "description": "Bangladesh Bureau of Educational Information and Statistics.", "image_url": "" },
+    { "name": "bteb", "title": "Bangladesh Technical Education Board", "description": "BTEB — technical & vocational education (কারিগরি শিক্ষা বোর্ড).", "image_url": "" },
+    { "name": "bmeb", "title": "Bangladesh Madrasah Education Board", "description": "BMED — madrasah education (মাদ্রাসা শিক্ষা বোর্ড).", "image_url": "" },
+    { "name": "dhaka-board", "title": "Dhaka Education Board", "description": "Dhaka Secondary and Higher Secondary Education Board.", "image_url": "" },
+    { "name": "rajshahi-board", "title": "Rajshahi Education Board", "description": "Rajshahi Secondary and Higher Secondary Education Board.", "image_url": "" },
+    { "name": "chittagong-board", "title": "Chittagong Education Board", "description": "Chittagong Secondary and Higher Secondary Education Board.", "image_url": "" },
+    { "name": "public-universities", "title": "Public Universities", "description": "Aggregated catalog of public universities in Bangladesh.", "image_url": "" },
+    { "name": "private-universities", "title": "Private Universities", "description": "Aggregated catalog of UGC-approved private universities.", "image_url": "" },
+    { "name": "shikkhahub", "title": "ShikkhaHub", "description": "Datasets curated and verified by ShikkhaHub (শিক্ষাহাব).", "image_url": "" }
+  ],
+  "groups": [
+    { "name": "higher-education", "title": "Higher Education", "description": "Universities, degree colleges and postgraduate institutions." },
+    { "name": "school", "title": "School", "description": "Primary and secondary schools." },
+    { "name": "college", "title": "College", "description": "Higher secondary colleges." },
+    { "name": "technical", "title": "Technical", "description": "Polytechnics, technical training institutes." },
+    { "name": "medical", "title": "Medical", "description": "Medical, dental and health science education." },
+    { "name": "engineering", "title": "Engineering", "description": "Engineering and technology programs." },
+    { "name": "scholarships", "title": "Scholarships", "description": "Government, university, NGO and international scholarships." },
+    { "name": "research", "title": "Research", "description": "Research datasets and institutional research output." },
+    { "name": "jobs", "title": "Jobs", "description": "Internships, campus recruitment and career fairs." },
+    { "name": "admission", "title": "Admission", "description": "Admission circulars, requirements, fees and deadlines." },
+    { "name": "results", "title": "Results", "description": "SSC, HSC, Diploma and university results." }
+  ],
+  "tags": [
+    "engineering", "medical", "public", "private", "dhaka", "ranking",
+    "scholarship", "2026", "admission", "undergraduate", "postgraduate",
+    "madrasah", "polytechnic", "vocational", "science", "commerce",
+    "arts", "research", "internship", "job", "results", "ssc", "hsc"
+  ]
+}
