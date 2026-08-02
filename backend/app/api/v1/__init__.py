@@ -18,6 +18,7 @@ from app.api.v1.endpoints import (
     nlqp,
     ar,
     skills,
+    scraper,
 )
 
 api_router = APIRouter()
@@ -65,3 +66,6 @@ api_router.include_router(ar.router, prefix="/ar", tags=["ar-tours"])
 
 # Predictive skill gap analysis (emerging skills, gap report, guidance)
 api_router.include_router(skills.router, prefix="/skills", tags=["skills"])
+
+# Web scraping engine (sources, jobs, records, extraction)
+api_router.include_router(scraper.router, prefix="/scraping", tags=["scraping"])
