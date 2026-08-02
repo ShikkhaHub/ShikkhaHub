@@ -3,6 +3,7 @@ import Dashboard from './pages/Dashboard'
 import InstitutionListing from './pages/InstitutionListing'
 import InstitutionDetail from './pages/InstitutionDetail'
 import ComparePage from './pages/ComparePage'
+import StudentDashboard from './pages/StudentDashboard'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import GoogleAnalytics from './components/GoogleAnalytics'
 
@@ -16,6 +17,7 @@ function App() {
         <Route path="/institutions" element={<InstitutionListing />} />
         <Route path="/institutions/:slug" element={<InstitutionDetail />} />
         <Route path="/compare" element={<ComparePage />} />
+        <Route path="/student" element={<StudentDashboard />} />
         
         {/* Admin Routes */}
         <Route path="/admin" element={<AdminDashboard />} />

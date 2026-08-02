@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from app.api.v1.endpoints import (
     institutions, locations, search, admin, auth, chat,
-    reviews, qa, comments, sitemap, analytics
+    reviews, qa, comments, sitemap, analytics, student_analytics
 )
 
 api_router = APIRouter()
@@ -20,6 +20,7 @@ api_router.include_router(comments.router, prefix="/comments", tags=["comments"]
 
 # Analytics
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
+api_router.include_router(student_analytics.router, prefix="", tags=["student-analytics"])
 
 # SEO features
 api_router.include_router(sitemap.router, prefix="", tags=["seo"])

@@ -52,6 +52,15 @@ class User(Base):
     page_views = relationship("PageView", back_populates="user")
     click_events = relationship("ClickEvent", back_populates="user")
     
+    # Student analytics relationships
+    student_profile = relationship(
+        "StudentProfile", back_populates="user", uselist=False,
+        cascade="all, delete-orphan"
+    )
+    analytics_events = relationship("AnalyticsEvent", back_populates="user")
+    study_sessions = relationship("StudySession", back_populates="user")
+    consent_records = relationship("ConsentRecord", back_populates="user")
+    
     # Relations (optional - for future features)
     # saved_institutions = relationship("Institution", secondary="user_saved_institutions")
     # reviews = relationship("Review", back_populates="user")

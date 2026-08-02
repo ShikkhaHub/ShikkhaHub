@@ -303,6 +303,161 @@ export interface ClickEvent {
   created_at: string;
 }
 
+// ==================== STUDENT ANALYTICS TYPES ====================
+
+export interface StudentProfile {
+  id: number;
+  user_id: number;
+  full_name?: string;
+  age?: number;
+  gender?: string;
+  date_of_birth?: string;
+  profile_picture_url?: string;
+
+  current_level?: string;
+  education_board?: string;
+  current_institution?: string;
+  department?: string;
+  session?: string;
+  expected_graduation?: string;
+  gpa_history?: { level: string; gpa: number }[];
+  academic_interests?: string[];
+
+  division?: string;
+  district?: string;
+  upazila?: string;
+  area?: string;
+  current_location?: string;
+
+  dream_career?: string;
+  interested_sectors?: string[];
+  preferred_university?: string;
+  preferred_subject?: string;
+  expected_salary?: number;
+  abroad_interest?: boolean;
+  scholarship_interest?: boolean;
+  annual_income?: number;
+  disability?: string;
+
+  favorite_subjects?: string[];
+  weak_subjects?: string[];
+  completed_courses?: string[];
+  study_hours_per_week?: number;
+  learning_style?: string;
+  language_preference?: string;
+  exam_preparation?: Record<string, unknown>;
+  weekly_study_target_minutes?: number;
+
+  student_type?: string;
+  strong_subjects?: string[];
+  interested_universities?: string[];
+  risk_score?: string;
+  recommendation_score?: number;
+  ai_profile?: Record<string, unknown>;
+
+  analytics_consent: boolean;
+  analytics_consent_at?: string;
+  ai_profile_generated_at?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AIStudentProfile {
+  student_type?: string;
+  learning_style?: string;
+  strong_subjects?: string[];
+  weak_subjects?: string[];
+  interested_universities?: string[];
+  career_goal?: string;
+  risk_score?: string;
+  recommendation_score?: number;
+}
+
+export interface StudentSegment {
+  key: string;
+  label: string;
+  description: string;
+}
+
+export interface SubjectPerformance {
+  subject: string;
+  minutes: number;
+  lessons: number;
+  sessions: number;
+  avg_accuracy: number;
+  avg_score: number;
+}
+
+export interface LearningAnalytics {
+  period_days: number;
+  total_minutes: number;
+  total_hours: number;
+  total_lessons: number;
+  avg_quiz_accuracy: number;
+  avg_score: number;
+  active_days: number;
+  learning_streak: number;
+  daily_minutes: { date: string; minutes: number }[];
+  subject_performance: SubjectPerformance[];
+}
+
+export interface InstitutionRecommendation {
+  institution_id: number;
+  name_en: string;
+  name_bn?: string;
+  short_name?: string;
+  slug: string;
+  type?: string;
+  score: number;
+  tier: 'safety' | 'competitive' | 'dream';
+  match_reasons: string[];
+  min_gpa_requirement?: number;
+}
+
+export interface InstitutionRecommendations {
+  best_matches: InstitutionRecommendation[];
+  safety: InstitutionRecommendation[];
+  competitive: InstitutionRecommendation[];
+  dream: InstitutionRecommendation[];
+}
+
+export interface CourseRecommendation {
+  course_id: number;
+  name: string;
+  degree_awarded?: string;
+  duration?: string;
+  institution_id: number;
+  institution_name?: string;
+  score: number;
+  match_reasons: string[];
+}
+
+export interface ScholarshipRecommendation {
+  scholarship_id: number;
+  institution_id: number;
+  institution_name: string;
+  level: string;
+  min_gpa?: number;
+  application_process?: string;
+  details?: string;
+  score: number;
+  match_reasons: string[];
+}
+
+export interface Recommendations {
+  institutions: InstitutionRecommendations;
+  courses: { courses: CourseRecommendation[]; interest_signals: string[] };
+  scholarships: { scholarships: ScholarshipRecommendation[] };
+}
+
+export interface Student360 {
+  profile: StudentProfile;
+  ai_profile: AIStudentProfile;
+  segments: StudentSegment[];
+  learning: LearningAnalytics;
+  analytics_consent: boolean;
+}
+
 // ==================== COMPARE TYPES ====================
 
 export interface CompareItem {

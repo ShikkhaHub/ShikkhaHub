@@ -7,6 +7,9 @@ from app.models.analytics import (
     SearchEvent, PageView, ClickEvent, 
     PopularSearch, NoResultSearch, DailyAnalytics
 )
+from app.models.student_analytics import (
+    StudentProfile, AnalyticsEvent, StudySession, ConsentRecord
+)
 from app.models.user import User, UserRole
 from app.models.review import InstitutionReview, ReviewHelpfulVote, ReviewReport
 from app.models.qa import Question, Answer, QuestionVote, AnswerVote
@@ -33,6 +36,10 @@ __all__ = [
     "PopularSearch",
     "NoResultSearch",
     "DailyAnalytics",
+    "StudentProfile",
+    "AnalyticsEvent",
+    "StudySession",
+    "ConsentRecord",
     "User",
     "UserRole",
     "InstitutionReview",

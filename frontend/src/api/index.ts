@@ -66,3 +66,10 @@ export {
   getAllLocations,
   type LocationHierarchy,
 } from './locations';
+
+// Student Analytics
+export {
+  studentAnalyticsApi,
+  type TrackEventPayload,
+  type TrackStudyPayload,
+} from './analytics';
