@@ -7,12 +7,15 @@ Run: python scripts/seed_data.py
 import sys
 sys.path.append(".")
 
+import json
+
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal, init_db
 from app.models import (
     Division, District, Upazila,
     InstitutionType, EducationBoard, UniversityGrantCommission,
-    FacilityType, RawSource
+    FacilityType, RawSource,
+    Campus, CampusPOI, CampusTour, TourStop, ARAsset,
 )
 
 # Bangladesh Divisions (8)
@@ -203,6 +206,148 @@ def seed_raw_sources(db: Session) -> None:
     print(f"  ✓ Seeded {len(RAW_SOURCES)} raw sources")
 
 
+def seed_ar_demo(db):
+    """Seed a sample AR campus tour for the first active campus.
+
+    This demonstrates the AR data model (geolocated POIs + tour + assets).
+    It is idempotent: skips if a campus already has POIs.
+    """
+    campus = db.query(Campus).filter(Campus.is_active.is_(True)).first()
+    if campus is None:
+        print("  ! No campus found — skipping AR demo seed")
+        return
+    if db.query(CampusPOI).filter(CampusPOI.campus_id == campus.id).first():
+        print("  - AR POIs already seeded, skipping")
+        return
+
+    base_lat = campus.latitude or 23.8103
+    base_lng = campus.longitude or 90.4125
+    # ~0.00009 deg latitude ≈ 10m; use it to lay out a small walkable loop
+    lat_step = 0.00009
+    lng_step = 0.00011
+
+    pois = [
+        {
+            "name_en": "Main Gate",
+            "name_bn": "প্রধান ফটক",
+            "category": "gate",
+            "marker_type": "image_marker",
+            "latitude": base_lat,
+            "longitude": base_lng,
+            "radius_m": 12,
+            "title": "Main Gate",
+            "short_description": "The main entrance to the campus.",
+            "info_tags": json.dumps(["Open 24h", "Security desk"]),
+            "display_order": 1,
+        },
+        {
+            "name_en": "Admission Office",
+            "name_bn": "ভর্তি অফিস",
+            "category": "admission_office",
+            "latitude": base_lat + lat_step * 2,
+            "longitude": base_lng + lng_step,
+            "radius_m": 15,
+            "title": "Admission Office",
+            "short_description": "Get admission forms and counselling.",
+            "info_tags": json.dumps(["Sun-Thu 9am-4pm", "Phone: +8802-XXXXXXX"]),
+            "display_order": 2,
+        },
+        {
+            "name_en": "Central Library",
+            "name_bn": "কেন্দ্রীয় গ্রন্থাগার",
+            "category": "library",
+            "latitude": base_lat + lat_step * 3,
+            "longitude": base_lng,
+            "radius_m": 20,
+            "title": "Central Library",
+            "short_description": "Home to 50,000+ books and study halls.",
+            "info_tags": json.dumps(["Mon-Sat 8am-8pm", "Seats: 400"]),
+            "department_summary": "Open stack, digital archive, reading rooms.",
+            "opening_hours": "Mon-Sat 8am-8pm",
+            "display_order": 3,
+        },
+        {
+            "name_en": "Computer Science Dept",
+            "name_bn": "কম্পিউটার বিজ্ঞান বিভাগ",
+            "category": "department",
+            "subcategory": "CSE",
+            "latitude": base_lat + lat_step * 5,
+            "longitude": base_lng + lng_step,
+            "radius_m": 18,
+            "title": "CSE Department",
+            "short_description": "Modern labs and faculty offices.",
+            "info_tags": json.dumps(["Labs: 4", "Faculty: 25"]),
+            "department_summary": "BSc in CSE, AI, and Software Engineering.",
+            "opening_hours": "Sun-Thu 9am-6pm",
+            "display_order": 4,
+        },
+        {
+            "name_en": "Cafeteria",
+            "name_bn": "ক্যাফেটেরিয়া",
+            "category": "cafeteria",
+            "latitude": base_lat + lat_step * 4,
+            "longitude": base_lng - lng_step,
+            "radius_m": 10,
+            "title": "Student Cafeteria",
+            "short_description": "Affordable meals and snacks.",
+            "info_tags": json.dumps(["Open 7am-9pm"]),
+            "display_order": 5,
+        },
+    ]
+
+    created = []
+    for p in pois:
+        poi = CampusPOI(
+            campus_id=campus.id,
+            institution_id=campus.institution_id,
+            **p,
+        )
+        db.add(poi)
+        db.flush()
+        created.append(poi)
+
+    # Lightweight primary asset for the library POI (marker image)
+    lib = next(p for p in created if p.category == "library")
+    db.add(
+        ARAsset(
+            poi_id=lib.id,
+            asset_type="image",
+            url="https://cdn.shikkhahub.dev/ar/library-marker.jpg",
+            thumbnail_url="https://cdn.shikkhahub.dev/ar/library-marker-thumb.jpg",
+            size_kb=42,
+            format="jpeg",
+            is_primary=True,
+        )
+    )
+
+    # Curated tour chaining the POIs into a walkable loop
+    tour = CampusTour(
+        campus_id=campus.id,
+        institution_id=campus.institution_id,
+        title="Main Campus Highlights",
+        title_bn="প্রধান ক্যাম্পাস সফর",
+        description="A 20-minute AR walking tour of the main campus.",
+        duration_minutes=20,
+        difficulty="easy",
+    )
+    db.add(tour)
+    db.flush()
+
+    for position, poi in enumerate(created, start=1):
+        db.add(
+            TourStop(
+                tour_id=tour.id,
+                poi_id=poi.id,
+                position=position,
+                narration=f"Welcome to {poi.name_en}.",
+                dwell_seconds=30,
+            )
+        )
+
+    db.commit()
+    print(f"  ✓ Seeded AR demo tour ({len(created)} POIs) for campus {campus.id}")
+
+
 def main():
     print("=" * 50)
     print("ShikkhaHub Database Seeder")
@@ -221,6 +366,7 @@ def main():
         seed_ugc_authorities(db)
         seed_facility_types(db)
         seed_raw_sources(db)
+        seed_ar_demo(db)
         
         print("\n" + "=" * 50)
         print("✓ Seeding completed successfully!")

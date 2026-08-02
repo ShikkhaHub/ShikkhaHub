@@ -64,6 +64,12 @@ from app.models.community import (
     PostTag,
     CommunityMember,
 )
+from app.models.ar import (
+    ARAsset,
+    CampusPOI,
+    CampusTour,
+    TourStop,
+)
 
 __all__ = [
     "Division",
@@ -130,4 +136,8 @@ __all__ = [
     "PostVote",
     "PostTag",
     "CommunityMember",
+    "ARAsset",
+    "CampusPOI",
+    "CampusTour",
+    "TourStop",
 ]

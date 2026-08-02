@@ -225,6 +225,9 @@ class Institution(Base):
         "SavedInstitution", back_populates="institution", cascade="all, delete-orphan"
     )
 
+    # AR campus tours
+    ar_pois = relationship("CampusPOI", back_populates="institution")
+
     __table_args__ = (
         Index("idx_institution_name", "name_en"),
         Index("idx_institution_type", "type_id"),

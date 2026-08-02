@@ -45,6 +45,10 @@ class Campus(Base):
 
     institution = relationship("Institution", back_populates="campuses")
 
+    # AR campus tours
+    ar_pois = relationship("CampusPOI", back_populates="campus")
+    ar_tours = relationship("CampusTour", back_populates="campus")
+
     __table_args__ = (
         Index("idx_campus_institution", "institution_id"),
         Index("idx_campus_location", "upazila_id"),

@@ -16,6 +16,7 @@ from app.api.v1.endpoints import (
     ckan,
     recommendations_ml,
     nlqp,
+    ar,
 )
 
 api_router = APIRouter()
@@ -57,3 +58,6 @@ api_router.include_router(
 
 # Natural language query processing
 api_router.include_router(nlqp.router, prefix="/search", tags=["search"])
+
+# AR campus tours (discovery + admin CRUD)
+api_router.include_router(ar.router, prefix="/ar", tags=["ar-tours"])
