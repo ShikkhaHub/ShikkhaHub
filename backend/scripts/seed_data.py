@@ -16,6 +16,7 @@ from app.models import (
     InstitutionType, EducationBoard, UniversityGrantCommission,
     FacilityType, RawSource,
     Campus, CampusPOI, CampusTour, TourStop, ARAsset,
+    Skill, MarketDemand,
 )
 
 # Bangladesh Divisions (8)
@@ -206,6 +207,163 @@ def seed_raw_sources(db: Session) -> None:
     print(f"  ✓ Seeded {len(RAW_SOURCES)} raw sources")
 
 
+# Skill catalog and market demand signals (predictive skill gap analysis).
+SKILLS = [
+    {
+        "name": "Data Analytics",
+        "name_bn": "ডেটা অ্যানালিটিক্স",
+        "category": "technical",
+        "subcategory": "data",
+        "description": "Collecting, cleaning and interpreting data to drive decisions.",
+        "keywords": "data analysis, data analytics, analytics, sql, excel, python, tableau",
+        "skill_level": "intermediate",
+    },
+    {
+        "name": "Software Development",
+        "name_bn": "সফটওয়্যার ডেভেলপমেন্ট",
+        "category": "technical",
+        "subcategory": "software",
+        "description": "Designing, building and maintaining software applications.",
+        "keywords": "software, programming, coding, developer, python, java, react, web",
+        "skill_level": "intermediate",
+    },
+    {
+        "name": "Artificial Intelligence",
+        "name_bn": "কৃত্রিম বুদ্ধিমত্তা",
+        "category": "emerging",
+        "subcategory": "ai",
+        "description": "Building intelligent systems: ML, NLP, computer vision.",
+        "keywords": "artificial intelligence, machine learning, deep learning,"
+                    " neural network, nlp, computer vision, ai",
+        "skill_level": "advanced",
+    },
+    {
+        "name": "Digital Marketing",
+        "name_bn": "ডিজিটাল মার্কেটিং",
+        "category": "soft_skill",
+        "subcategory": "marketing",
+        "description": "Promoting products and services through digital channels.",
+        "keywords": "digital marketing, seo, social media, content marketing, google ads",
+        "skill_level": "intermediate",
+    },
+    {
+        "name": "English Communication",
+        "name_bn": "ইংরেজি যোগাযোগ",
+        "category": "soft_skill",
+        "subcategory": "communication",
+        "description": "Professional written and spoken English for the workplace.",
+        "keywords": "english, communication, spoken english, ielts, business english",
+        "skill_level": "intermediate",
+    },
+    {
+        "name": "Freelancing",
+        "name_bn": "ফ্রিল্যান্সিং",
+        "category": "soft_skill",
+        "subcategory": "entrepreneurship",
+        "description": "Delivering services remotely to international clients.",
+        "keywords": "freelancing, upwork, fiverr, remote work",
+        "skill_level": "beginner",
+    },
+    {
+        "name": "Cyber Security",
+        "name_bn": "সাইবার নিরাপত্তা",
+        "category": "emerging",
+        "subcategory": "security",
+        "description": "Protecting systems, networks and data from attacks.",
+        "keywords": "cyber security, network security, ethical hacking, information security",
+        "skill_level": "advanced",
+    },
+]
+
+# Year -> (skill_name -> demand_score). Rising series signal emerging skills.
+MARKET_DEMAND = {
+    2022: {
+        "Data Analytics": 58,
+        "Software Development": 72,
+        "Artificial Intelligence": 40,
+        "Digital Marketing": 55,
+        "English Communication": 70,
+        "Freelancing": 62,
+        "Cyber Security": 35,
+    },
+    2023: {
+        "Data Analytics": 66,
+        "Software Development": 78,
+        "Artificial Intelligence": 52,
+        "Digital Marketing": 60,
+        "English Communication": 72,
+        "Freelancing": 66,
+        "Cyber Security": 44,
+    },
+    2024: {
+        "Data Analytics": 74,
+        "Software Development": 82,
+        "Artificial Intelligence": 63,
+        "Digital Marketing": 64,
+        "English Communication": 71,
+        "Freelancing": 64,
+        "Cyber Security": 55,
+    },
+    2025: {
+        "Data Analytics": 81,
+        "Software Development": 85,
+        "Artificial Intelligence": 74,
+        "Digital Marketing": 66,
+        "English Communication": 69,
+        "Freelancing": 60,
+        "Cyber Security": 66,
+    },
+}
+
+
+def seed_skills(db: Session) -> None:
+    """Seed the canonical skill catalog (idempotent)."""
+    print("Seeding skills...")
+    for s in SKILLS:
+        existing = db.query(Skill).filter(Skill.name == s["name"]).first()
+        if not existing:
+            db.add(Skill(**s))
+    db.commit()
+    print(f"  ✓ Seeded {len(SKILLS)} skills")
+
+
+def seed_market_demand(db: Session) -> None:
+    """Seed demand-side signals per skill per year (idempotent)."""
+    print("Seeding market demand signals...")
+    count = 0
+    for year, scores in MARKET_DEMAND.items():
+        for skill_name, demand_score in scores.items():
+            skill = db.query(Skill).filter(Skill.name == skill_name).first()
+            if skill is None:
+                continue
+            existing = (
+                db.query(MarketDemand)
+                .filter(
+                    MarketDemand.skill_id == skill.id,
+                    MarketDemand.year == year,
+                    MarketDemand.quarter.is_(None),
+                )
+                .first()
+            )
+            if existing:
+                continue
+            db.add(
+                MarketDemand(
+                    skill_id=skill.id,
+                    year=year,
+                    demand_score=demand_score,
+                    postings_count=int(demand_score * 120),
+                    hiring_growth_pct=round((demand_score - 40) / 4, 1),
+                    source="job_portal_aggregate",
+                    industry_sector="information_technology",
+                    region="national",
+                )
+            )
+            count += 1
+    db.commit()
+    print(f"  ✓ Seeded {count} market demand signals")
+
+
 def seed_ar_demo(db):
     """Seed a sample AR campus tour for the first active campus.
 
@@ -367,6 +525,8 @@ def main():
         seed_facility_types(db)
         seed_raw_sources(db)
         seed_ar_demo(db)
+        seed_skills(db)
+        seed_market_demand(db)
         
         print("\n" + "=" * 50)
         print("✓ Seeding completed successfully!")

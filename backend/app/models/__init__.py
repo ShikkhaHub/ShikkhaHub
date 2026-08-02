@@ -70,6 +70,12 @@ from app.models.ar import (
     CampusTour,
     TourStop,
 )
+from app.models.skills import (
+    Skill,
+    MarketDemand,
+    InstitutionSkill,
+    SkillGapAnalysis,
+)
 
 __all__ = [
     "Division",
@@ -140,4 +146,8 @@ __all__ = [
     "CampusPOI",
     "CampusTour",
     "TourStop",
+    "Skill",
+    "MarketDemand",
+    "InstitutionSkill",
+    "SkillGapAnalysis",
 ]

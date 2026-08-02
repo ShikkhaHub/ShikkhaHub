@@ -228,6 +228,9 @@ class Institution(Base):
     # AR campus tours
     ar_pois = relationship("CampusPOI", back_populates="institution")
 
+    # Skill supply links (derived from curriculum)
+    skill_links = relationship("InstitutionSkill", back_populates="institution")
+
     __table_args__ = (
         Index("idx_institution_name", "name_en"),
         Index("idx_institution_type", "type_id"),

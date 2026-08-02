@@ -17,6 +17,7 @@ from app.api.v1.endpoints import (
     recommendations_ml,
     nlqp,
     ar,
+    skills,
 )
 
 api_router = APIRouter()
@@ -61,3 +62,6 @@ api_router.include_router(nlqp.router, prefix="/search", tags=["search"])
 
 # AR campus tours (discovery + admin CRUD)
 api_router.include_router(ar.router, prefix="/ar", tags=["ar-tours"])
+
+# Predictive skill gap analysis (emerging skills, gap report, guidance)
+api_router.include_router(skills.router, prefix="/skills", tags=["skills"])
